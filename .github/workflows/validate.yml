@@ -1,0 +1,83 @@
+name: Validate Blueprints
+
+on:
+  push:
+    paths:
+      - "blueprints/**/*.yaml"
+  pull_request:
+    paths:
+      - "blueprints/**/*.yaml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install pyyaml yamllint
+
+      - name: Run yamllint on all blueprints
+        run: yamllint -d relaxed blueprints/
+
+      - name: Validate Blueprint schema
+        run: |
+          python3 << 'EOF'
+          import yaml, glob, sys
+
+          class HALoader(yaml.SafeLoader):
+              pass
+          HALoader.add_constructor('!input', lambda l, n: l.construct_scalar(n))
+          HALoader.add_constructor('!secret', lambda l, n: l.construct_scalar(n))
+          HALoader.add_constructor('!include', lambda l, n: l.construct_scalar(n))
+          HALoader.add_constructor('!env_var', lambda l, n: l.construct_scalar(n))
+
+          errors = []
+          files = sorted(glob.glob('blueprints/**/*.yaml', recursive=True))
+
+          if not files:
+              print("Keine Blueprint-Dateien gefunden.")
+              sys.exit(1)
+
+          for f in files:
+              try:
+                  with open(f) as fp:
+                      data = yaml.load(fp, HALoader)
+
+                  if not isinstance(data, dict):
+                      errors.append(f"{f}: Keine gueltige YAML-Struktur")
+                      continue
+
+                  bp = data.get('blueprint', {})
+                  if not bp:
+                      errors.append(f"{f}: blueprint-Abschnitt fehlt")
+                      continue
+
+                  if not bp.get('name'):
+                      errors.append(f"{f}: blueprint.name fehlt")
+                  if bp.get('domain') not in ['automation', 'script', 'template']:
+                      errors.append(f"{f}: blueprint.domain muss automation|script|template sein")
+                  if not bp.get('author'):
+                      errors.append(f"{f}: blueprint.author fehlt")
+                  if not bp.get('homeassistant', {}).get('min_version'):
+                      errors.append(f"{f}: homeassistant.min_version fehlt")
+
+                  print(f"OK  {f}")
+
+              except yaml.YAMLError as e:
+                  errors.append(f"{f}: YAML-Fehler: {e}")
+                  print(f"ERR {f}: {e}")
+
+          if errors:
+              print("\nValidierungsfehler:")
+              for e in errors:
+                  print(f"  - {e}")
+              sys.exit(1)
+          else:
+              print(f"\nAlle {len(files)} Blueprints valide.")
+          EOF

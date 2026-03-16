@@ -1,0 +1,323 @@
+blueprint:
+  name: "Version 2 Presence & Light – Motion/Presence + Türkontakt + Timer + Dämmerung + Schalter"
+  description: >
+    Anwesenheits- und bewegungsbasierte Lichtsteuerung (Version 2).
+    Unterstuetzt Bewegungsmelder, Praesenz-Sensoren, Tuerkontakte, Timer-Helfer,
+    Daemmerungspruefung (Lux und/oder Sonne) sowie einen Sperr-Schalter.
+    Das Licht wird bei Aktivitaet eingeschaltet und nach Ablauf des Timers
+    automatisch ausgeschaltet. Helligkeit und Uebergangszeiten sind konfigurierbar.
+  domain: automation
+  author: "magicx78"
+  homeassistant:
+    min_version: "2024.6.0"
+
+  input:
+    target_lights:
+      name: Ziel-Licht(er)
+      selector:
+        entity:
+          multiple: true
+          domain: light
+
+    automation_enabled:
+      name: Sperr-Schalter (Eingeschaltet = Automation DEAKTIVIERT)
+      selector:
+        entity:
+          domain: input_boolean
+
+    motion_sensor:
+      name: Bewegungsmelder
+      default: []
+      selector:
+        entity:
+          multiple: true
+          domain: binary_sensor
+          device_class: motion
+
+    presence_sensors:
+      name: Präsenzsensor(en) (optional)
+      default: []
+      selector:
+        entity:
+          multiple: true
+          domain: binary_sensor
+
+    door_contacts:
+      name: Tür-/Fensterkontakte (optional)
+      default: []
+      selector:
+        entity:
+          multiple: true
+          domain: binary_sensor
+
+    door_contact_count_mode:
+      name: Türkontakt zählt als Aktivität bei …
+      default: "open"
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - label: "Offen"
+              value: "open"
+            - label: "Zu"
+              value: "closed"
+            - label: "Beides (jede Änderung)"
+              value: "both"
+            - label: "Aus"
+              value: "off"
+
+    activity_timer:
+      name: Timer (Helfer)
+      selector:
+        entity:
+          domain: timer
+
+    timer_duration:
+      name: Timer-Dauer (Sek.)
+      default: 120
+      selector:
+        number:
+          min: 1
+          max: 7200
+          step: 5
+          unit_of_measurement: "s"
+          mode: slider
+
+    darkness_mode:
+      name: Dunkelheitsprüfung
+      default: "lux_or_sun"
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - label: "Lux"
+              value: "lux"
+            - label: "Sonne (unter Horizont)"
+              value: "sun"
+            - label: "Lux ODER Sonne"
+              value: "lux_or_sun"
+            - label: "Immer (ignorieren)"
+              value: "always"
+
+    illuminance_sensor:
+      name: Helligkeitssensor (Lux) (optional)
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+          device_class: illuminance
+
+    lux_threshold:
+      name: Lux-Schwellwert
+      default: 50
+      selector:
+        number:
+          min: 0
+          max: 2000
+          step: 1
+          unit_of_measurement: "lx"
+          mode: slider
+
+    on_brightness:
+      name: Helligkeit beim Einschalten (%)
+      default: 100
+      selector:
+        number:
+          min: 1
+          max: 100
+          step: 1
+          mode: slider
+
+    on_transition:
+      name: Transition beim Einschalten (Sek.)
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 1
+          unit_of_measurement: "s"
+          mode: slider
+
+    off_transition:
+      name: Transition beim Ausschalten (Sek.)
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 10
+          step: 1
+          unit_of_measurement: "s"
+          mode: slider
+
+    motion_trigger_mode:
+      name: Bewegungsmelder-Modus
+      default: "motion"
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - label: "Bewegung (motion)"
+              value: "motion"
+            - label: "Präsenz/Hold (presence)"
+              value: "presence"
+            - label: "Deaktiviert"
+              value: "off"
+
+mode: restart
+max_exceeded: silent
+
+variables:
+  v_mode: !input motion_trigger_mode
+  v_lights: !input target_lights
+  v_motion: !input motion_sensor
+  v_presence: !input presence_sensors
+  v_contacts: !input door_contacts
+  v_contact_mode: !input door_contact_count_mode
+  v_timer: !input activity_timer
+  v_timer_dur: !input timer_duration
+  v_dark_mode: !input darkness_mode
+  v_lux_sensor: !input illuminance_sensor
+  v_lux_th: !input lux_threshold
+  v_on_bri: !input on_brightness
+  v_on_tr: !input on_transition
+  v_off_tr: !input off_transition
+
+  v_motion_on: >-
+    {% set ms = expand(v_motion) if v_motion != [] else [] %}
+    {{ ms | selectattr('state', 'eq', 'on') | list | count > 0 }}
+
+  v_presence_on: >-
+    {% set ps = expand(v_presence) if v_presence != [] else [] %}
+    {{ ps | selectattr('state', 'eq', 'on') | list | count > 0 }}
+
+  # Achtung: "both" als *Aktivitätszustand* ist logisch tricky.
+  # Hier bleibt deine Semantik erhalten (existiert Kontakt => aktiv),
+  # aber siehe Hinweis unten.
+  v_contact_active: >-
+    {% set cs = expand(v_contacts) if v_contacts != [] else [] %}
+    {% if v_contact_mode == 'open' %}
+      {{ cs | selectattr('state', 'eq', 'on') | list | count > 0 }}
+    {% elif v_contact_mode == 'closed' %}
+      {{ cs | selectattr('state', 'eq', 'off') | list | count > 0 }}
+    {% elif v_contact_mode == 'both' %}
+      {{ cs | count > 0 }}
+    {% else %}
+      {{ false }}
+    {% endif %}
+
+  v_is_active: >-
+    {{ (v_motion_on if v_mode != 'off' else false) or v_presence_on }}
+
+  v_contact_event_ok: >-
+    {% if trigger.id != 'door_change' %} false
+    {% elif v_contact_mode == 'open' %} {{ trigger.to_state.state == 'on' }}
+    {% elif v_contact_mode == 'closed' %} {{ trigger.to_state.state == 'off' }}
+    {% elif v_contact_mode == 'both' %} true
+    {% else %} false
+    {% endif %}
+
+  v_is_dark: >-
+    {% if v_dark_mode == 'always' %}
+      true
+    {% elif v_dark_mode == 'sun' %}
+      {{ is_state('sun.sun', 'below_horizon') }}
+    {% elif v_dark_mode == 'lux' %}
+      {{ (states(v_lux_sensor) | float(999999)) < (v_lux_th | float) }}
+    {% else %}
+      {{ is_state('sun.sun', 'below_horizon') or (states(v_lux_sensor) | float(999999)) < (v_lux_th | float) }}
+    {% endif %}
+
+  v_any_light_on: >-
+    {% set ls = expand(v_lights) %}
+    {{ ls | selectattr('state', 'eq', 'on') | list | count > 0 }}
+
+trigger:
+  - platform: state
+    entity_id: !input motion_sensor
+    to: "on"
+    id: active_trigger
+
+  - platform: state
+    entity_id: !input presence_sensors
+    to: "on"
+    id: active_trigger
+
+  - platform: state
+    entity_id: !input door_contacts
+    id: door_change
+
+  - platform: state
+    entity_id: !input motion_sensor
+    to: "off"
+    id: inactive_trigger
+
+  - platform: state
+    entity_id: !input presence_sensors
+    to: "off"
+    id: inactive_trigger
+
+  - platform: event
+    event_type: timer.finished
+    event_data:
+      entity_id: !input activity_timer
+    id: timer_finished
+
+condition:
+  # Schalter: nur wenn Helfer AUS ist, läuft die Automation
+  - condition: state
+    entity_id: !input automation_enabled
+    state: "off"
+
+
+action:
+  - choose:
+      # FALL 1: Aktivierung (Einschalten / Timer Refresh)
+      - conditions:
+          - condition: template
+            value_template: >
+              {{ trigger.id == 'active_trigger' or v_contact_event_ok }}
+          - condition: template
+            value_template: "{{ v_is_dark }}"
+        sequence:
+          - if:
+              - condition: template
+                value_template: "{{ not v_any_light_on }}"
+            then:
+              - service: light.turn_on
+                target:
+                  entity_id: !input target_lights
+                data:
+                  brightness_pct: "{{ v_on_bri }}"
+                  transition: "{{ v_on_tr }}"
+          - service: timer.start
+            target:
+              entity_id: !input activity_timer
+            data:
+              duration: "{{ v_timer_dur | int }}"
+
+      # FALL 2: Inaktivität (nur motion/presence off)
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'inactive_trigger' }}"
+          - condition: template
+            value_template: "{{ not v_is_active and v_any_light_on }}"
+        sequence:
+          - service: timer.start
+            target:
+              entity_id: !input activity_timer
+            data:
+              duration: "{{ v_timer_dur | int }}"
+
+      # FALL 3: Ausschalten
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'timer_finished' }}"
+          - condition: template
+            value_template: "{{ not v_is_active }}"
+        sequence:
+          - service: light.turn_off
+            target:
+              entity_id: !input target_lights
+            data:
+              transition: "{{ v_off_tr }}"

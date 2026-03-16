@@ -1,0 +1,348 @@
+# Camera Health Blueprint v1.0.1
+# Fix: Removed invalid use of "!input" inside a Jinja template (caused TemplateSyntaxError).
+#
+# Install:
+#   Save as: config/blueprints/automation/a_meins/cam_health_v1_0_1.yaml
+
+blueprint:
+  name: "Camera Health (Frigate FPS + Unavailable + Pulse Ping) v1.0.1"
+  description: >
+    Meldet Kamera-/Stream-Ausfälle über drei Signale:
+    (1) Kamera-Entity wird 'unavailable'
+    (2) Frigate FPS unter Schwellwert (Stream down)
+    (3) Connectivity/Ping Binary-Sensor (z.B. Device Pulse) wird 'off'/'unavailable'
+    Optional: Recovery-Meldungen. Mit Dedupe gegen Doppelmeldungen.
+  domain: automation
+  author: "magicx78"
+  homeassistant:
+    min_version: "2024.6.0"
+
+  input:
+    offline_entities:
+      name: "Kamera-Entities (Trigger bei 'unavailable')"
+      description: "Wähle hier deine Kamera-Entities (Frigate/Reolink/etc.), die bei Offline 'unavailable' werden."
+      selector:
+        entity:
+          multiple: true
+
+    offline_for:
+      name: "Wie lange 'unavailable' bevor gemeldet wird?"
+      default:
+        minutes: 2
+      selector:
+        duration: {}
+
+    online_for:
+      name: "Wie lange wieder erreichbar bevor 'online' gemeldet wird?"
+      default:
+        seconds: 30
+      selector:
+        duration: {}
+
+    frigate_fps_sensors:
+      name: "Frigate FPS Sensoren"
+      description: "z.B. sensor.ausfahrt_camera_fps"
+      default: []
+      selector:
+        entity:
+          multiple: true
+          filter:
+            domain: sensor
+
+    fps_threshold:
+      name: "FPS Down-Schwellwert (unterhalb = Stream down)"
+      default: 0.1
+      selector:
+        number:
+          min: 0
+          max: 30
+          step: 0.1
+          mode: box
+          unit_of_measurement: fps
+
+    fps_for:
+      name: "Wie lange unter Down-Schwellwert bevor gemeldet wird?"
+      default:
+        minutes: 1
+      selector:
+        duration: {}
+
+    fps_recover_threshold:
+      name: "FPS Recover-Schwellwert (oberhalb = Stream wieder ok)"
+      description: "Etwas höher als Down setzen, um Flattern zu vermeiden (z.B. 1.0 fps)."
+      default: 1.0
+      selector:
+        number:
+          min: 0
+          max: 30
+          step: 0.1
+          mode: box
+          unit_of_measurement: fps
+
+    fps_recover_for:
+      name: "Wie lange über Recover-Schwellwert bevor 'ok' gemeldet wird?"
+      default:
+        seconds: 30
+      selector:
+        duration: {}
+
+    ping_sensors:
+      name: "Ping/Connectivity Binary-Sensoren (z.B. Device Pulse)"
+      description: "Wähle die binary_sensor.* Entities (device_class: connectivity), die 'off' werden, wenn Gerät offline ist."
+      default: []
+      selector:
+        entity:
+          multiple: true
+          filter:
+            domain: binary_sensor
+
+    ping_down_for:
+      name: "Wie lange Ping 'off/unavailable' bevor gemeldet wird?"
+      default:
+        minutes: 1
+      selector:
+        duration: {}
+
+    ping_up_for:
+      name: "Wie lange Ping wieder 'on' bevor 'ok' gemeldet wird?"
+      default:
+        seconds: 30
+      selector:
+        duration: {}
+
+    notify_recovered:
+      name: "Auch 'wieder ok' melden?"
+      default: true
+      selector:
+        boolean: {}
+
+    dedupe:
+      name: "Doppelmeldungen vermeiden (empfohlen)"
+      default: true
+      selector:
+        boolean: {}
+
+    entity_base_overrides_json:
+      name: "Entity→Base overrides (JSON)"
+      description: >
+        OPTIONAL. Falls dein Ping-Binary-Sensor keine passende Entity-ID hat (z.B. binary_sensor.pulse_123),
+        kannst du hier ein JSON-Dict angeben, um die Zuordnung zu erzwingen.
+        Beispiel: {"binary_sensor.xyz_ping":"ausfahrt"}
+      default: "{}"
+      selector:
+        text: {}
+
+    title_offline:
+      name: "Titel (offline)"
+      default: "⚠️ Kamera/Stream offline"
+      selector:
+        text: {}
+
+    title_online:
+      name: "Titel (wieder ok)"
+      default: "✅ Kamera/Stream wieder ok"
+      selector:
+        text: {}
+
+    notify_actions:
+      name: "Benachrichtigungs-Aktionen"
+      description: >
+        Standard notify.notify. Im UI kannst du notify.mobile_app_* wählen.
+        Tipp iOS/Android: nutze data.tag: "{{ notify_tag }}" um Meldungen zu aktualisieren statt zu spammen.
+      default:
+        - action: notify.notify
+          data:
+            title: "{{ title }}"
+            message: "{{ message }}"
+      selector:
+        action: {}
+
+mode: parallel
+max: 10
+
+trigger:
+  - platform: state
+    id: unavailable_down
+    entity_id: !input offline_entities
+    to: "unavailable"
+    for: !input offline_for
+
+  - platform: state
+    id: unavailable_up
+    entity_id: !input offline_entities
+    from: "unavailable"
+    for: !input online_for
+
+  - platform: numeric_state
+    id: fps_down
+    entity_id: !input frigate_fps_sensors
+    below: !input fps_threshold
+    for: !input fps_for
+
+  - platform: numeric_state
+    id: fps_up
+    entity_id: !input frigate_fps_sensors
+    above: !input fps_recover_threshold
+    for: !input fps_recover_for
+
+  - platform: state
+    id: ping_down_off
+    entity_id: !input ping_sensors
+    to: "off"
+    for: !input ping_down_for
+
+  - platform: state
+    id: ping_down_unavailable
+    entity_id: !input ping_sensors
+    to: "unavailable"
+    for: !input ping_down_for
+
+  - platform: state
+    id: ping_up
+    entity_id: !input ping_sensors
+    to: "on"
+    for: !input ping_up_for
+
+variables:
+  offline_entities: !input offline_entities
+  fps_sensors: !input frigate_fps_sensors
+  ping_sensors: !input ping_sensors
+
+  fps_threshold: !input fps_threshold
+  fps_recover_threshold: !input fps_recover_threshold
+
+  notify_recovered: !input notify_recovered
+  dedupe: !input dedupe
+
+  title_offline: !input title_offline
+  title_online: !input title_online
+
+  entity_base_overrides_json: !input entity_base_overrides_json
+
+  # Optional overrides: {"binary_sensor.xyz_ping":"ausfahrt", ...}
+  _overrides: >-
+    {{ (entity_base_overrides_json | default('{}')) | from_json }}
+
+  # Derive a "base" name used to pair camera/fps/ping.
+  _obj: "{{ trigger.entity_id.split('.')[1] }}"
+  _derived_base: >-
+    {% if trigger.entity_id.startswith('camera.') %}
+      {{ _obj }}
+    {% elif trigger.entity_id.startswith('sensor.') and _obj.endswith('_camera_fps') %}
+      {{ _obj | replace('_camera_fps','') }}
+    {% elif trigger.entity_id.startswith('binary_sensor.') %}
+      {{ _obj
+        | replace('_kamera_ping','')
+        | replace('_camera_ping','')
+        | replace('_cam_ping','')
+        | replace('_ping_status','')
+        | replace('_ping','')
+      }}
+    {% else %}
+      {{ _obj }}
+    {% endif %}
+
+  base: >-
+    {{ _overrides.get(trigger.entity_id, _derived_base) }}
+
+  related_cam: "{{ 'camera.' ~ base }}"
+  related_fps: "{{ 'sensor.' ~ base ~ '_camera_fps' }}"
+
+  related_cam_selected: "{{ related_cam in offline_entities }}"
+  related_fps_selected: "{{ related_fps in fps_sensors }}"
+
+  related_cam_state: "{{ states(related_cam) }}"
+  related_fps_value: "{{ states(related_fps) | float(default=999) }}"
+
+  # Find a ping sensor that contains the base in its entity_id (best effort).
+  related_ping: >-
+    {% set b = base %}
+    {% set matches = (ping_sensors | select('search', b) | list) %}
+    {{ matches[0] if matches | length > 0 else '' }}
+
+  related_ping_state: >-
+    {{ states(related_ping) if related_ping != '' else 'unknown' }}
+
+  notify_tag: "cam-health-{{ base }}"
+
+  entity_name: >-
+    {{ trigger.to_state.name if trigger.to_state is not none
+       else (state_attr(trigger.entity_id, 'friendly_name') or trigger.entity_id) }}
+
+  title: >-
+    {% if trigger.id in ['unavailable_down','fps_down','ping_down_off','ping_down_unavailable'] %}
+      {{ title_offline }}
+    {% else %}
+      {{ title_online }}
+    {% endif %}
+
+  message: >-
+    {% if trigger.id == 'unavailable_down' %}
+      {{ entity_name }} ist seit {{ trigger.for }} nicht erreichbar (unavailable).
+    {% elif trigger.id == 'fps_down' %}
+      {{ entity_name }} meldet FPS={{ trigger.to_state.state }} seit {{ trigger.for }} (Stream down).
+    {% elif trigger.id in ['ping_down_off','ping_down_unavailable'] %}
+      {{ entity_name }} ist per Ping seit {{ trigger.for }} nicht erreichbar
+      (host={{ state_attr(trigger.entity_id,'host') }}, tag={{ state_attr(trigger.entity_id,'tag') }}).
+    {% elif trigger.id == 'unavailable_up' %}
+      {{ entity_name }} ist wieder erreichbar (seit {{ trigger.for }}).
+    {% elif trigger.id == 'fps_up' %}
+      {{ entity_name }} meldet wieder FPS={{ trigger.to_state.state }} seit {{ trigger.for }} (Stream ok).
+    {% elif trigger.id == 'ping_up' %}
+      {{ entity_name }} ist per Ping wieder erreichbar (seit {{ trigger.for }}).
+    {% else %}
+      {{ entity_name }}: Statusänderung erkannt.
+    {% endif %}
+
+action:
+  - choose:
+      # --- OFFLINE (Priority: unavailable > ping > fps) ---
+      - conditions:
+          - condition: template
+            value_template: "{{ trigger.id == 'unavailable_down' }}"
+        sequence: !input notify_actions
+
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ trigger.id in ['ping_down_off','ping_down_unavailable']
+                 and (not dedupe or not (related_cam_selected and related_cam_state == 'unavailable')) }}
+        sequence: !input notify_actions
+
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ trigger.id == 'fps_down'
+                 and (not dedupe or not (
+                      (related_cam_selected and related_cam_state == 'unavailable')
+                      or (related_ping != '' and related_ping_state in ['off','unavailable'])
+                 )) }}
+        sequence: !input notify_actions
+
+      # --- RECOVERY ---
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ trigger.id == 'unavailable_up'
+                 and notify_recovered
+                 and trigger.to_state is not none
+                 and trigger.to_state.state not in ['unavailable','unknown'] }}
+        sequence: !input notify_actions
+
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ trigger.id == 'ping_up'
+                 and notify_recovered
+                 and (not related_cam_selected or related_cam_state != 'unavailable') }}
+        sequence: !input notify_actions
+
+      - conditions:
+          - condition: template
+            value_template: >-
+              {{ trigger.id == 'fps_up'
+                 and notify_recovered
+                 and (not related_cam_selected or related_cam_state != 'unavailable')
+                 and (related_ping == '' or related_ping_state not in ['off','unavailable']) }}
+        sequence: !input notify_actions
+    default: []

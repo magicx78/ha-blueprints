@@ -1,0 +1,2473 @@
+# ═══════════════════════════════════════════════════════════════════════════
+#  GrowWarn Blueprint  –  v1.0  (HA 2024.6.0+)
+#  Datei ablegen unter:  config/blueprints/automation/growwarn/growwarn.yaml
+#  Danach: Einstellungen → Automationen → Blueprint importieren → GrowWarn
+# ═══════════════════════════════════════════════════════════════════════════
+#  VORAUSSETZUNGEN
+#   - HA 2024.6.0 oder neuer
+#   - Mindestens eine TTS-Integration (Piper / Google / Nabu Casa) – optional
+#   - HA Companion App für Push-Notify (iOS) – optional
+#   - Helpers MÜSSEN VOR der ersten Automation-Ausführung angelegt werden!
+#     Lege folgende input_text-Helpers an (Einstellungen → Geräte & Dienste
+#     → Helfer → + Helfer → Text) – jeweils max. 255 Zeichen, Standard: idle
+#
+#     PFLICHT (GH1):
+#       input_text.growwarn_gh1_temp        (Name: GrowWarn GH1 Temp Latch)
+#       input_text.growwarn_gh1_hum         (Name: GrowWarn GH1 Hum  Latch)
+#       input_text.growwarn_gh1_temp_stale  (Name: GrowWarn GH1 Temp Stale)
+#       input_text.growwarn_gh1_hum_stale   (Name: GrowWarn GH1 Hum  Stale)
+#
+#     OPTIONAL (GH2 – nur wenn GH2 konfiguriert):
+#       input_text.growwarn_gh2_temp
+#       input_text.growwarn_gh2_hum
+#       input_text.growwarn_gh2_temp_stale
+#       input_text.growwarn_gh2_hum_stale
+#
+#     OPTIONAL (GH3 – nur wenn GH3 konfiguriert):
+#       input_text.growwarn_gh3_temp
+#       input_text.growwarn_gh3_hum
+#       input_text.growwarn_gh3_temp_stale
+#       input_text.growwarn_gh3_hum_stale
+#
+#     OPTIONAL (Binärsensor-Latch):
+#       input_text.growwarn_binary_latch
+# ═══════════════════════════════════════════════════════════════════════════
+
+blueprint:
+  name: "GrowWarn – Gewächshaus Temp/Feuchte Überwachung (bis 3 GH)"
+  description: >
+    Überwacht 1–3 Gewächshäuser (Temperatur + Luftfeuchte) mit konfigurierbaren
+    Grenzwerten, Latch-/Entprell-Logik, optionaler TTS-Ansage (mit Ruhezeiten),
+    Push-Notify (iOS), Stale-Erkennung und optionalem Binärsensor (Tür/Alarm).
+
+    ── HINWEIS: Helpers anlegen ──
+    Bevor diese Automation aktiv genutzt wird, müssen die input_text-Helpers
+    manuell angelegt werden (siehe Kommentar oben in der Blueprint-Datei).
+  domain: automation
+  author: "magicx78"
+  homeassistant:
+    min_version: "2024.6.0"
+  input:
+
+    # ── GH 1 ────────────────────────────────────────────────────────────────
+    gh1_name:
+      name: "GH1 – Name"
+      description: "Anzeigename für Gewächshaus 1 (z.B. 'Tomatenhaus')"
+      default: "Gewächshaus 1"
+      selector:
+        text:
+
+    gh1_temp_sensor:
+      name: "GH1 – Temperatursensor"
+      description: "Temperatursensor für GH1 (sensor.*)"
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+
+    gh1_hum_sensor:
+      name: "GH1 – Luftfeuchtesensor"
+      description: "Luftfeuchtesensor für GH1 (sensor.*)"
+      selector:
+        entity:
+          domain: sensor
+          device_class: humidity
+
+    gh1_temp_min:
+      name: "GH1 – Temperatur Untergrenze (°C)"
+      default: 10
+      selector:
+        number:
+          min: -40
+          max: 100
+          step: 0.5
+          unit_of_measurement: "°C"
+
+    gh1_temp_max:
+      name: "GH1 – Temperatur Obergrenze (°C)"
+      default: 35
+      selector:
+        number:
+          min: -40
+          max: 100
+          step: 0.5
+          unit_of_measurement: "°C"
+
+    gh1_hum_min:
+      name: "GH1 – Luftfeuchte Untergrenze (%)"
+      default: 40
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+
+    gh1_hum_max:
+      name: "GH1 – Luftfeuchte Obergrenze (%)"
+      default: 85
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+
+    # ── GH 2 (optional) ─────────────────────────────────────────────────────
+    gh2_enabled:
+      name: "GH2 – Aktivieren?"
+      description: "Zweites Gewächshaus überwachen"
+      default: false
+      selector:
+        boolean:
+
+    gh2_name:
+      name: "GH2 – Name"
+      default: "Gewächshaus 2"
+      selector:
+        text:
+
+    gh2_temp_sensor:
+      name: "GH2 – Temperatursensor"
+      description: "Leer lassen wenn GH2 deaktiviert"
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+
+    gh2_hum_sensor:
+      name: "GH2 – Luftfeuchtesensor"
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+          device_class: humidity
+
+    gh2_temp_min:
+      name: "GH2 – Temperatur Untergrenze (°C)"
+      default: 10
+      selector:
+        number:
+          min: -40
+          max: 100
+          step: 0.5
+          unit_of_measurement: "°C"
+
+    gh2_temp_max:
+      name: "GH2 – Temperatur Obergrenze (°C)"
+      default: 35
+      selector:
+        number:
+          min: -40
+          max: 100
+          step: 0.5
+          unit_of_measurement: "°C"
+
+    gh2_hum_min:
+      name: "GH2 – Luftfeuchte Untergrenze (%)"
+      default: 40
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+
+    gh2_hum_max:
+      name: "GH2 – Luftfeuchte Obergrenze (%)"
+      default: 85
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+
+    # ── GH 3 (optional) ─────────────────────────────────────────────────────
+    gh3_enabled:
+      name: "GH3 – Aktivieren?"
+      description: "Drittes Gewächshaus überwachen"
+      default: false
+      selector:
+        boolean:
+
+    gh3_name:
+      name: "GH3 – Name"
+      default: "Gewächshaus 3"
+      selector:
+        text:
+
+    gh3_temp_sensor:
+      name: "GH3 – Temperatursensor"
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+          device_class: temperature
+
+    gh3_hum_sensor:
+      name: "GH3 – Luftfeuchtesensor"
+      default: ""
+      selector:
+        entity:
+          domain: sensor
+          device_class: humidity
+
+    gh3_temp_min:
+      name: "GH3 – Temperatur Untergrenze (°C)"
+      default: 10
+      selector:
+        number:
+          min: -40
+          max: 100
+          step: 0.5
+          unit_of_measurement: "°C"
+
+    gh3_temp_max:
+      name: "GH3 – Temperatur Obergrenze (°C)"
+      default: 35
+      selector:
+        number:
+          min: -40
+          max: 100
+          step: 0.5
+          unit_of_measurement: "°C"
+
+    gh3_hum_min:
+      name: "GH3 – Luftfeuchte Untergrenze (%)"
+      default: 40
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+
+    gh3_hum_max:
+      name: "GH3 – Luftfeuchte Obergrenze (%)"
+      default: 85
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 1
+          unit_of_measurement: "%"
+
+    # ── Timing ──────────────────────────────────────────────────────────────
+    trigger_for:
+      name: "Trigger-Verzögerung"
+      description: >
+        Wie lange muss ein Wert außerhalb des Bereichs liegen, bevor eine
+        Warnung gesendet wird. Empfehlung: 5–15 Minuten.
+      default:
+        minutes: 10
+      selector:
+        duration:
+
+    reset_for:
+      name: "Reset-Verzögerung"
+      description: >
+        Wie lange muss der Wert wieder im Normalbereich liegen, bevor der
+        Latch zurückgesetzt wird und erneut gewarnt werden darf.
+        Empfehlung: 5–10 Minuten.
+      default:
+        minutes: 5
+      selector:
+        duration:
+
+    # ── Stale-Erkennung ─────────────────────────────────────────────────────
+    stale_enabled:
+      name: "Stale-Erkennung aktivieren?"
+      description: >
+        Erkennt, wenn ein Sensor länger keine neuen Werte liefert
+        (Sensor offline / Verbindungsproblem).
+      default: true
+      selector:
+        boolean:
+
+    stale_for:
+      name: "Stale-Schwelle"
+      description: >
+        Nach dieser Zeit ohne Sensoraktualisierung wird eine Stale-Warnung
+        gesendet. Empfehlung: 30–60 Minuten.
+      default:
+        minutes: 30
+      selector:
+        duration:
+
+    # ── Wiederholung ────────────────────────────────────────────────────────
+    repeat_enabled:
+      name: "Wiederholungswarnung aktivieren?"
+      description: >
+        Wenn aktiv: Solange ein Wert außerhalb des Bereichs liegt UND kein
+        ACK gesendet wurde, wird die Warnung regelmäßig wiederholt.
+        Bei gesetztem ACK KEINE Wiederholung.
+      default: false
+      selector:
+        boolean:
+
+    repeat_interval:
+      name: "Wiederholungsintervall"
+      description: "Abstand zwischen Wiederholungswarnungen (nur wenn Wiederholung aktiv)"
+      default:
+        minutes: 30
+      selector:
+        duration:
+
+    # ── Notify ──────────────────────────────────────────────────────────────
+    notify_enabled:
+      name: "Push-Notify aktivieren?"
+      default: true
+      selector:
+        boolean:
+
+    notify_targets:
+      name: "Push-Geräte (Companion App)"
+      description: >
+        📱 Wähle ein oder mehrere Notify‑Dienste für Push‑Benachrichtigungen.
+        Für die Companion‑App heissen diese Dienste typischerweise
+        `notify.mobile_app_<gerät>`; andere Dienste wie Telegram können ebenfalls
+        erscheinen, sollten aber nicht ausgewählt werden.
+      default: []
+      selector:
+        entity:
+          domain: notify
+          multiple: true
+
+    # ── TTS ─────────────────────────────────────────────────────────────────
+    tts_enabled:
+      name: "TTS-Ansage aktivieren?"
+      default: false
+      selector:
+        boolean:
+
+    tts_service:
+      name: "TTS-Dienst(e)"
+      description: >
+        Liste der TTS‑Services – z.B. 'tts.speak' oder
+        'tts.google_translate_say'. Mehrere ausgewählte Dienste werden
+        nacheinander ausgeführt. Nur relevant wenn TTS aktiv.
+      default:
+        - "tts.speak"
+      selector:
+        text:
+          multiple: true
+
+    tts_target:
+      name: "TTS-Ziel (Media Player)"
+      description: "Media Player Entität für TTS-Ausgabe"
+      default: ""
+      selector:
+        entity:
+          domain: media_player
+
+    tts_quiet_start:
+      name: "Ruhezeit – Start (Uhrzeit)"
+      description: "Ab dieser Uhrzeit keine TTS-Ansagen (nur Notify)"
+      default: "22:00:00"
+      selector:
+        time:
+
+    tts_quiet_end:
+      name: "Ruhezeit – Ende (Uhrzeit)"
+      description: "Ab dieser Uhrzeit sind TTS-Ansagen wieder erlaubt"
+      default: "07:00:00"
+      selector:
+        time:
+
+    # ── Danke-Ansage ────────────────────────────────────────────────────────
+    thanks_enabled:
+      name: "Danke-Ansage aktivieren?"
+      description: >
+        Wenn aktiviert: Nach dem Quittieren (ACK) oder nach automatischem
+        Reset eine kurze Bestätigungsansage/-nachricht senden.
+      default: false
+      selector:
+        boolean:
+
+    # ── Binärsensor (optional) ──────────────────────────────────────────────
+    binary_sensor_enabled:
+      name: "Globalen Binärsensor überwachen?"
+      description: >
+        Optionaler Türkontakt, Alarm o.ä. – wird in allen Warnungen
+        erwähnt und bei Zustandsänderung separat gemeldet.
+      default: false
+      selector:
+        boolean:
+
+    binary_sensor:
+      name: "Binärsensor Entität"
+      description: "z.B. binary_sensor.gewaechshaus_tuer"
+      default: ""
+      selector:
+        entity:
+          domain: binary_sensor
+
+    binary_sensor_name:
+      name: "Binärsensor Anzeigename"
+      default: "Gewächshaustür"
+      selector:
+        text:
+
+    binary_sensor_open_state:
+      name: "Binärsensor 'offen'-Zustand"
+      description: "'on' = offen wenn Sensor AN, 'off' = offen wenn Sensor AUS"
+      default: "on"
+      selector:
+        select:
+          options:
+            - "on"
+            - "off"
+
+    binary_action_open:
+      name: "Aktion bei Tür/Sensor ÖFFNEN"
+      description: "Optionale HA-Aktion (Service-Call) wenn Binärsensor 'offen' meldet"
+      default: []
+      selector:
+        action:
+
+    binary_action_close:
+      name: "Aktion bei Tür/Sensor SCHLIESSEN"
+      description: "Optionale HA-Aktion wenn Binärsensor 'geschlossen' meldet"
+      default: []
+      selector:
+        action:
+
+    binary_timer_minutes:
+      name: "Tür-Offenhalte-Timer (Minuten)"
+      description: >
+        Warnung wenn Tür/Sensor länger als diese Zeit offen bleibt.
+        0 = Timer deaktiviert.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 240
+          step: 1
+          unit_of_measurement: "min"
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  TRIGGER
+# ═══════════════════════════════════════════════════════════════════════════
+trigger:
+  # Jede Minute prüfen (Polling für trigger_for / stale_for / repeat)
+  - platform: time_pattern
+    minutes: "/1"
+    id: "poll"
+
+  # ACK-Action von iOS Companion App
+  - platform: event
+    event_type: mobile_app_notification_action
+    id: "ack_action"
+
+  # Binärsensor – Zustandsänderung
+  - platform: state
+    entity_id: !input binary_sensor
+    id: "binary_change"
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  VARIABLEN (einmalig aus Inputs berechnet)
+# ═══════════════════════════════════════════════════════════════════════════
+variables:
+  # ── Inputs spiegeln ──────────────────────────────────────────────────────
+  v_gh1_name: !input gh1_name
+  v_gh1_temp: !input gh1_temp_sensor
+  v_gh1_hum:  !input gh1_hum_sensor
+  v_gh1_tmin: !input gh1_temp_min
+  v_gh1_tmax: !input gh1_temp_max
+  v_gh1_hmin: !input gh1_hum_min
+  v_gh1_hmax: !input gh1_hum_max
+
+  v_gh2_en:   !input gh2_enabled
+  v_gh2_name: !input gh2_name
+  v_gh2_temp: !input gh2_temp_sensor
+  v_gh2_hum:  !input gh2_hum_sensor
+  v_gh2_tmin: !input gh2_temp_min
+  v_gh2_tmax: !input gh2_temp_max
+  v_gh2_hmin: !input gh2_hum_min
+  v_gh2_hmax: !input gh2_hum_max
+
+  v_gh3_en:   !input gh3_enabled
+  v_gh3_name: !input gh3_name
+  v_gh3_temp: !input gh3_temp_sensor
+  v_gh3_hum:  !input gh3_hum_sensor
+  v_gh3_tmin: !input gh3_temp_min
+  v_gh3_tmax: !input gh3_temp_max
+  v_gh3_hmin: !input gh3_hum_min
+  v_gh3_hmax: !input gh3_hum_max
+
+  v_trigger_for:     !input trigger_for
+  v_reset_for:       !input reset_for
+  v_stale_en:        !input stale_enabled
+  v_stale_for:       !input stale_for
+  v_repeat_en:       !input repeat_enabled
+  v_repeat_interval: !input repeat_interval
+
+  v_notify_en:      !input notify_enabled
+  v_tts_en:         !input tts_enabled
+  v_tts_service:    !input tts_service
+  v_tts_target:     !input tts_target
+  v_quiet_start:    !input tts_quiet_start
+  v_quiet_end:      !input tts_quiet_end
+  v_thanks_en:      !input thanks_enabled
+
+  v_bin_en:         !input binary_sensor_enabled
+  v_bin_sensor:     !input binary_sensor
+  v_bin_name:       !input binary_sensor_name
+  v_bin_open_state: !input binary_sensor_open_state
+  v_bin_timer_min:  !input binary_timer_minutes
+
+  # ── Berechnete Sekunden ──────────────────────────────────────────────────
+  v_trigger_sec: >
+    {{ (v_trigger_for.hours | default(0)) * 3600
+     + (v_trigger_for.minutes | default(0)) * 60
+     + (v_trigger_for.seconds | default(0)) }}
+  v_reset_sec: >
+    {{ (v_reset_for.hours | default(0)) * 3600
+     + (v_reset_for.minutes | default(0)) * 60
+     + (v_reset_for.seconds | default(0)) }}
+  v_stale_sec: >
+    {{ (v_stale_for.hours | default(0)) * 3600
+     + (v_stale_for.minutes | default(0)) * 60
+     + (v_stale_for.seconds | default(0)) }}
+  v_repeat_sec: >
+    {{ (v_repeat_interval.hours | default(0)) * 3600
+     + (v_repeat_interval.minutes | default(0)) * 60
+     + (v_repeat_interval.seconds | default(0)) }}
+
+  # ── Ruhezeit-Check ───────────────────────────────────────────────────────
+  v_in_quiet: >
+    {% set now_t = now().strftime('%H:%M:%S') %}
+    {% set qs = v_quiet_start %}
+    {% set qe = v_quiet_end %}
+    {% if qs < qe %}
+      {{ now_t >= qs and now_t < qe }}
+    {% else %}
+      {{ now_t >= qs or now_t < qe }}
+    {% endif %}
+
+  # ── Binärsensor aktueller Status ─────────────────────────────────────────
+  v_bin_is_open: >
+    {% if v_bin_en and v_bin_sensor != '' %}
+      {{ states(v_bin_sensor) == v_bin_open_state }}
+    {% else %}
+      false
+    {% endif %}
+  v_bin_status_text: >
+    {% if v_bin_en and v_bin_sensor != '' %}
+      {{ v_bin_name }}: {{ 'OFFEN' if v_bin_is_open else 'geschlossen' }}
+    {% else %}
+      ''
+    {% endif %}
+
+  # ── Aktueller ACK-Action-Payload ─────────────────────────────────────────
+  v_ack_action: >
+    {{ trigger.event.data.action if trigger.id == 'ack_action' else '' }}
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  BEDINGUNGEN
+# ═══════════════════════════════════════════════════════════════════════════
+condition: []
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  AKTIONEN  (choose nach trigger.id)
+# ═══════════════════════════════════════════════════════════════════════════
+action:
+  - choose:
+
+    # ════════════════════════════════════════════════════════════════════════
+    #  CASE 1: Poll – Wertprüfung für alle GH + Stale
+    # ════════════════════════════════════════════════════════════════════════
+    - conditions:
+        - condition: trigger
+          id: "poll"
+      sequence:
+
+        # ── GH-Liste als Template-Schleife ──────────────────────────────────
+        # Da Blueprints keine native for-Schleife über GH-Definitionen
+        # erlauben, werden GH1/GH2/GH3 sequenziell per repeat behandelt.
+
+        # ────────────────────────────────────────────────────────────────────
+        #  GH1 – Temperatur
+        # ────────────────────────────────────────────────────────────────────
+        - variables:
+            latch_gh1_temp: "{{ states('input_text.growwarn_gh1_temp') }}"
+            val_gh1_temp:   "{{ states(v_gh1_temp) | float(none) }}"
+            last_gh1_temp:  >
+              {{ (as_timestamp(states[v_gh1_temp].last_changed) | float(0))
+                 if v_gh1_temp != '' else 0 }}
+            out_gh1_temp: >
+              {{ val_gh1_temp is not none
+                 and (val_gh1_temp < v_gh1_tmin or val_gh1_temp > v_gh1_tmax) }}
+            gh1_temp_low: >
+              {{ val_gh1_temp is not none and val_gh1_temp < v_gh1_tmin }}
+
+        # Trigger-Check: Wert seit trigger_for außerhalb?
+        - variables:
+            gh1_temp_out_since: >
+              {% set raw = latch_gh1_temp %}
+              {% if raw.startswith('out_since=') %}
+                {{ raw.split('=')[1].split('|')[0] | float(0) }}
+              {% else %}
+                0
+              {% endif %}
+            gh1_temp_ok_since: >
+              {% set raw = latch_gh1_temp %}
+              {% if raw.startswith('ok_since=') %}
+                {{ raw.split('=')[1].split('|')[0] | float(0) }}
+              {% else %}
+                0
+              {% endif %}
+            gh1_temp_state: >
+              {% set raw = latch_gh1_temp %}
+              {% if raw.startswith('out_since=') %}   warned_candidate
+              {% elif raw.startswith('warned') %}      warned
+              {% elif raw.startswith('ack') %}         ack
+              {% elif raw.startswith('ok_since=') %}   ok_candidate
+              {% else %}                               idle
+              {% endif %}
+            gh1_temp_last_repeat: >
+              {% set raw = latch_gh1_temp %}
+              {% if '|repeat=' in raw %}
+                {{ raw.split('|repeat=')[1] | float(0) }}
+              {% else %}
+                0
+              {% endif %}
+
+        # Zustandsmaschine GH1 Temp
+        - choose:
+            # Wert außerhalb – noch nicht im Latch
+            - conditions:
+                - condition: template
+                  value_template: >
+                    {{ out_gh1_temp and gh1_temp_state == 'idle' }}
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh1_temp
+                  data:
+                    value: "out_since={{ as_timestamp(now()) | round(0) }}"
+
+            # Wert außerhalb – Kandidat, Frist abgelaufen → warnen
+            - conditions:
+                - condition: template
+                  value_template: >
+                    {{ out_gh1_temp
+                       and gh1_temp_state == 'warned_candidate'
+                       and (as_timestamp(now()) - gh1_temp_out_since) >= v_trigger_sec }}
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh1_temp
+                  data:
+                    value: >
+                      warned|repeat={{ as_timestamp(now()) | round(0) }}
+                - if:
+                    - condition: template
+                      value_template: "{{ v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "⚠️ GrowWarn – {{ v_gh1_name }}"
+                              message: >
+                                🌡️ Temperatur {{ '🥶 zu kalt' if gh1_temp_low else '🔥 zu warm' }}:
+                                {{ val_gh1_temp | round(1) }}°C
+                                (Grenze: {{ v_gh1_tmin }}–{{ v_gh1_tmax }}°C)
+                                {% if v_bin_en and v_bin_sensor != '' %}
+                                | {{ v_bin_status_text }}{% endif %}
+                              data:
+                                push:
+                                  sound:
+                                    name: "default"
+                                    critical: 1
+                                    volume: 1.0
+                                actions:
+                                  - action: "ACK_GH1_TEMP"
+                                    title: "✅ Bestätigen"
+                                    destructive: false
+                - if:
+                    - condition: template
+                      value_template: "{{ v_tts_en and not v_in_quiet and v_tts_target != '' }}"
+                  then:
+                    - repeat:
+                        for_each: !input tts_service
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              entity_id: "{{ v_tts_target }}"
+                              message: >
+                                Achtung! {{ v_gh1_name }}: Temperatur
+                                {{ 'zu niedrig' if gh1_temp_low else 'zu hoch' }}:
+                                {{ val_gh1_temp | round(1) }} Grad.
+
+            # Wert außerhalb – gewarnt, Wiederholung fällig (kein ACK)
+            - conditions:
+                - condition: template
+                  value_template: >
+                    {{ out_gh1_temp
+                       and gh1_temp_state == 'warned'
+                       and v_repeat_en
+                       and (as_timestamp(now()) - gh1_temp_last_repeat) >= v_repeat_sec }}
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh1_temp
+                  data:
+                    value: >
+                      warned|repeat={{ as_timestamp(now()) | round(0) }}
+                - if:
+                    - condition: template
+                      value_template: "{{ v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "🔄 GrowWarn – {{ v_gh1_name }} (Wiederholung)"
+                              message: >
+                                🌡️ Temperatur weiterhin
+                                {{ '🥶 zu kalt' if gh1_temp_low else '🔥 zu warm' }}:
+                                {{ val_gh1_temp | round(1) }}°C
+                                {% if v_bin_en and v_bin_sensor != '' %}
+                                | {{ v_bin_status_text }}{% endif %}
+                              data:
+                                push:
+                                  sound:
+                                    name: "default"
+                                actions:
+                                  - action: "ACK_GH1_TEMP"
+                                    title: "✅ Bestätigen"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_tts_en and not v_in_quiet and v_tts_target != '' }}"
+                  then:
+                    - repeat:
+                        for_each: !input tts_service
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              entity_id: "{{ v_tts_target }}"
+                              message: >
+                                Erinnerung: {{ v_gh1_name }}: Temperatur
+                                {{ 'immer noch zu niedrig' if gh1_temp_low else 'immer noch zu hoch' }}.
+
+            # Wert wieder OK – Reset-Kandidat setzen
+            - conditions:
+                - condition: template
+                  value_template: >
+                    {{ not out_gh1_temp
+                       and gh1_temp_state in ['warned','warned_candidate','out_since='] }}
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh1_temp
+                  data:
+                    value: "ok_since={{ as_timestamp(now()) | round(0) }}"
+
+            # ACK-Latch – bleibt bis Reset
+            # (Reset erfolgt weiter unten nach reset_for)
+
+            # Wert OK – Reset-Frist abgelaufen → idle
+            - conditions:
+                - condition: template
+                  value_template: >
+                    {{ not out_gh1_temp
+                       and gh1_temp_state == 'ok_candidate'
+                       and (as_timestamp(now()) - gh1_temp_ok_since) >= v_reset_sec }}
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh1_temp
+                  data:
+                    value: "idle"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_thanks_en and v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "✅ GrowWarn – {{ v_gh1_name }} normal"
+                              message: "🌡️ Temperatur wieder im Normalbereich."
+
+        # ────────────────────────────────────────────────────────────────────
+        #  GH1 – Luftfeuchte (identische Logik)
+        # ────────────────────────────────────────────────────────────────────
+        - variables:
+            latch_gh1_hum: "{{ states('input_text.growwarn_gh1_hum') }}"
+            val_gh1_hum:   "{{ states(v_gh1_hum) | float(none) }}"
+            out_gh1_hum: >
+              {{ val_gh1_hum is not none
+                 and (val_gh1_hum < v_gh1_hmin or val_gh1_hum > v_gh1_hmax) }}
+            gh1_hum_low: >
+              {{ val_gh1_hum is not none and val_gh1_hum < v_gh1_hmin }}
+
+        - variables:
+            gh1_hum_out_since: >
+              {% set raw = latch_gh1_hum %}
+              {% if raw.startswith('out_since=') %}
+                {{ raw.split('=')[1].split('|')[0] | float(0) }}
+              {% else %}0{% endif %}
+            gh1_hum_ok_since: >
+              {% set raw = latch_gh1_hum %}
+              {% if raw.startswith('ok_since=') %}
+                {{ raw.split('=')[1].split('|')[0] | float(0) }}
+              {% else %}0{% endif %}
+            gh1_hum_state: >
+              {% set raw = latch_gh1_hum %}
+              {% if raw.startswith('out_since=') %}   warned_candidate
+              {% elif raw.startswith('warned') %}      warned
+              {% elif raw.startswith('ack') %}         ack
+              {% elif raw.startswith('ok_since=') %}   ok_candidate
+              {% else %}                               idle
+              {% endif %}
+            gh1_hum_last_repeat: >
+              {% set raw = latch_gh1_hum %}
+              {% if '|repeat=' in raw %}
+                {{ raw.split('|repeat=')[1] | float(0) }}
+              {% else %}0{% endif %}
+
+        - choose:
+            - conditions:
+                - condition: template
+                  value_template: "{{ out_gh1_hum and gh1_hum_state == 'idle' }}"
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh1_hum
+                  data:
+                    value: "out_since={{ as_timestamp(now()) | round(0) }}"
+
+            - conditions:
+                - condition: template
+                  value_template: >
+                    {{ out_gh1_hum and gh1_hum_state == 'warned_candidate'
+                       and (as_timestamp(now()) - gh1_hum_out_since) >= v_trigger_sec }}
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh1_hum
+                  data:
+                    value: "warned|repeat={{ as_timestamp(now()) | round(0) }}"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "⚠️ GrowWarn – {{ v_gh1_name }}"
+                              message: >
+                                💧 Luftfeuchte
+                                {{ '📉 zu trocken' if gh1_hum_low else '📈 zu feucht' }}:
+                                {{ val_gh1_hum | round(1) }}%
+                                (Grenze: {{ v_gh1_hmin }}–{{ v_gh1_hmax }}%)
+                                {% if v_bin_en and v_bin_sensor != '' %}
+                                | {{ v_bin_status_text }}{% endif %}
+                              data:
+                                push:
+                                  sound:
+                                    name: "default"
+                                    critical: 1
+                                    volume: 1.0
+                                actions:
+                                  - action: "ACK_GH1_HUM"
+                                    title: "✅ Bestätigen"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_tts_en and not v_in_quiet and v_tts_target != '' }}"
+                  then:
+                    - repeat:
+                        for_each: !input tts_service
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              entity_id: "{{ v_tts_target }}"
+                              message: >
+                                Achtung! {{ v_gh1_name }}: Luftfeuchte
+                                {{ 'zu niedrig' if gh1_hum_low else 'zu hoch' }}:
+                                {{ val_gh1_hum | round(1) }} Prozent.
+
+            - conditions:
+                - condition: template
+                  value_template: >
+                    {{ out_gh1_hum and gh1_hum_state == 'warned'
+                       and v_repeat_en
+                       and (as_timestamp(now()) - gh1_hum_last_repeat) >= v_repeat_sec }}
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh1_hum
+                  data:
+                    value: "warned|repeat={{ as_timestamp(now()) | round(0) }}"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "🔄 GrowWarn – {{ v_gh1_name }} (Wiederholung)"
+                              message: >
+                                💧 Luftfeuchte weiterhin
+                                {{ '📉 zu trocken' if gh1_hum_low else '📈 zu feucht' }}:
+                                {{ val_gh1_hum | round(1) }}%
+                              data:
+                                push:
+                                  sound:
+                                    name: "default"
+                                actions:
+                                  - action: "ACK_GH1_HUM"
+                                    title: "✅ Bestätigen"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_tts_en and not v_in_quiet and v_tts_target != '' }}"
+                  then:
+                    - repeat:
+                        for_each: !input tts_service
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              entity_id: "{{ v_tts_target }}"
+                              message: >
+                                Erinnerung: {{ v_gh1_name }}: Luftfeuchte
+                                {{ 'immer noch zu niedrig' if gh1_hum_low else 'immer noch zu hoch' }}.
+
+            - conditions:
+                - condition: template
+                  value_template: >
+                    {{ not out_gh1_hum
+                       and gh1_hum_state in ['warned','warned_candidate','out_since='] }}
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh1_hum
+                  data:
+                    value: "ok_since={{ as_timestamp(now()) | round(0) }}"
+
+            - conditions:
+                - condition: template
+                  value_template: >
+                    {{ not out_gh1_hum and gh1_hum_state == 'ok_candidate'
+                       and (as_timestamp(now()) - gh1_hum_ok_since) >= v_reset_sec }}
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh1_hum
+                  data:
+                    value: "idle"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_thanks_en and v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "✅ GrowWarn – {{ v_gh1_name }} normal"
+                              message: "💧 Luftfeuchte wieder im Normalbereich."
+
+        # ────────────────────────────────────────────────────────────────────
+        #  GH1 – Stale-Check Temp
+        # ────────────────────────────────────────────────────────────────────
+        - if:
+            - condition: template
+              value_template: "{{ v_stale_en }}"
+          then:
+            - variables:
+                latch_gh1_ts: "{{ states('input_text.growwarn_gh1_temp_stale') }}"
+                age_gh1_temp: >
+                  {{ (as_timestamp(now())
+                      - as_timestamp(states[v_gh1_temp].last_changed) | float(0))
+                     if v_gh1_temp != '' and states[v_gh1_temp] is defined else 9999 }}
+                gh1_ts_state: >
+                  {% set raw = latch_gh1_ts %}
+                  {% if raw == 'stale_warned' %}stale_warned
+                  {% else %}idle{% endif %}
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ age_gh1_temp >= v_stale_sec and gh1_ts_state == 'idle' }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh1_temp_stale
+                      data:
+                        value: "stale_warned"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "📡 GrowWarn – {{ v_gh1_name }} Sensor offline"
+                                  message: >
+                                    Temperatursensor seit
+                                    {{ (age_gh1_temp / 60) | round(0) }} Minuten
+                                    ohne Update!
+                                  data:
+                                    push:
+                                      sound:
+                                        name: "default"
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ age_gh1_temp < v_stale_sec and gh1_ts_state == 'stale_warned' }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh1_temp_stale
+                      data:
+                        value: "idle"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_thanks_en and v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "✅ GrowWarn – {{ v_gh1_name }} Sensor online"
+                                  message: "Temperatursensor liefert wieder Werte."
+
+        # ────────────────────────────────────────────────────────────────────
+        #  GH1 – Stale-Check Hum
+        # ────────────────────────────────────────────────────────────────────
+        - if:
+            - condition: template
+              value_template: "{{ v_stale_en }}"
+          then:
+            - variables:
+                latch_gh1_hs: "{{ states('input_text.growwarn_gh1_hum_stale') }}"
+                age_gh1_hum_s: >
+                  {{ (as_timestamp(now())
+                      - as_timestamp(states[v_gh1_hum].last_changed) | float(0))
+                     if v_gh1_hum != '' and states[v_gh1_hum] is defined else 9999 }}
+                gh1_hs_state: >
+                  {% if latch_gh1_hs == 'stale_warned' %}stale_warned{% else %}idle{% endif %}
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ age_gh1_hum_s >= v_stale_sec and gh1_hs_state == 'idle' }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh1_hum_stale
+                      data:
+                        value: "stale_warned"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "📡 GrowWarn – {{ v_gh1_name }} Sensor offline"
+                                  message: >
+                                    Luftfeuchtesensor seit
+                                    {{ (age_gh1_hum_s / 60) | round(0) }} Minuten
+                                    ohne Update!
+                                  data:
+                                    push:
+                                      sound:
+                                        name: "default"
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ age_gh1_hum_s < v_stale_sec and gh1_hs_state == 'stale_warned' }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh1_hum_stale
+                      data:
+                        value: "idle"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_thanks_en and v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "✅ GrowWarn – {{ v_gh1_name }} Sensor online"
+                                  message: "Luftfeuchtesensor liefert wieder Werte."
+
+        # ────────────────────────────────────────────────────────────────────
+        #  GH2 – Temp (nur wenn aktiviert)
+        # ────────────────────────────────────────────────────────────────────
+        - if:
+            - condition: template
+              value_template: "{{ v_gh2_en and v_gh2_temp != '' }}"
+          then:
+            - variables:
+                latch_gh2_temp: "{{ states('input_text.growwarn_gh2_temp') }}"
+                val_gh2_temp:   "{{ states(v_gh2_temp) | float(none) }}"
+                out_gh2_temp: >
+                  {{ val_gh2_temp is not none
+                     and (val_gh2_temp < v_gh2_tmin or val_gh2_temp > v_gh2_tmax) }}
+                gh2_temp_low: "{{ val_gh2_temp is not none and val_gh2_temp < v_gh2_tmin }}"
+                gh2_temp_out_since: >
+                  {% set raw = latch_gh2_temp %}
+                  {% if raw.startswith('out_since=') %}
+                    {{ raw.split('=')[1].split('|')[0] | float(0) }}
+                  {% else %}0{% endif %}
+                gh2_temp_ok_since: >
+                  {% set raw = latch_gh2_temp %}
+                  {% if raw.startswith('ok_since=') %}
+                    {{ raw.split('=')[1].split('|')[0] | float(0) }}
+                  {% else %}0{% endif %}
+                gh2_temp_state: >
+                  {% set raw = latch_gh2_temp %}
+                  {% if raw.startswith('out_since=') %}   warned_candidate
+                  {% elif raw.startswith('warned') %}      warned
+                  {% elif raw.startswith('ack') %}         ack
+                  {% elif raw.startswith('ok_since=') %}   ok_candidate
+                  {% else %}                               idle
+                  {% endif %}
+                gh2_temp_last_repeat: >
+                  {% set raw = latch_gh2_temp %}
+                  {% if '|repeat=' in raw %}{{ raw.split('|repeat=')[1] | float(0) }}
+                  {% else %}0{% endif %}
+
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ out_gh2_temp and gh2_temp_state == 'idle' }}"
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_temp
+                      data:
+                        value: "out_since={{ as_timestamp(now()) | round(0) }}"
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ out_gh2_temp and gh2_temp_state == 'warned_candidate'
+                           and (as_timestamp(now()) - gh2_temp_out_since) >= v_trigger_sec }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_temp
+                      data:
+                        value: "warned|repeat={{ as_timestamp(now()) | round(0) }}"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "⚠️ GrowWarn – {{ v_gh2_name }}"
+                                  message: >
+                                    🌡️ Temperatur
+                                    {{ '🥶 zu kalt' if gh2_temp_low else '🔥 zu warm' }}:
+                                    {{ val_gh2_temp | round(1) }}°C
+                                    (Grenze: {{ v_gh2_tmin }}–{{ v_gh2_tmax }}°C)
+                                    {% if v_bin_en and v_bin_sensor != '' %}
+                                    | {{ v_bin_status_text }}{% endif %}
+                                  data:
+                                    push:
+                                      sound:
+                                        name: "default"
+                                        critical: 1
+                                        volume: 1.0
+                                    actions:
+                                      - action: "ACK_GH2_TEMP"
+                                        title: "✅ Bestätigen"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_tts_en and not v_in_quiet and v_tts_target != '' }}"
+                      then:
+                        - repeat:
+                            for_each: !input tts_service
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  entity_id: "{{ v_tts_target }}"
+                                  message: >
+                                    Achtung! {{ v_gh2_name }}: Temperatur
+                                    {{ 'zu niedrig' if gh2_temp_low else 'zu hoch' }}:
+                                    {{ val_gh2_temp | round(1) }} Grad.
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ out_gh2_temp and gh2_temp_state == 'warned'
+                           and v_repeat_en
+                           and (as_timestamp(now()) - gh2_temp_last_repeat) >= v_repeat_sec }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_temp
+                      data:
+                        value: "warned|repeat={{ as_timestamp(now()) | round(0) }}"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "🔄 GrowWarn – {{ v_gh2_name }} (Wiederholung)"
+                                  message: >
+                                    🌡️ Temperatur weiterhin
+                                    {{ '🥶 zu kalt' if gh2_temp_low else '🔥 zu warm' }}:
+                                    {{ val_gh2_temp | round(1) }}°C
+                                  data:
+                                    push:
+                                      sound:
+                                        name: "default"
+                                    actions:
+                                      - action: "ACK_GH2_TEMP"
+                                        title: "✅ Bestätigen"
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ not out_gh2_temp
+                           and gh2_temp_state in ['warned','warned_candidate','out_since='] }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_temp
+                      data:
+                        value: "ok_since={{ as_timestamp(now()) | round(0) }}"
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ not out_gh2_temp and gh2_temp_state == 'ok_candidate'
+                           and (as_timestamp(now()) - gh2_temp_ok_since) >= v_reset_sec }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_temp
+                      data:
+                        value: "idle"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_thanks_en and v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "✅ GrowWarn – {{ v_gh2_name }} normal"
+                                  message: "🌡️ Temperatur wieder im Normalbereich."
+
+        # ────────────────────────────────────────────────────────────────────
+        #  GH2 – Hum (nur wenn aktiviert)
+        # ────────────────────────────────────────────────────────────────────
+        - if:
+            - condition: template
+              value_template: "{{ v_gh2_en and v_gh2_hum != '' }}"
+          then:
+            - variables:
+                latch_gh2_hum: "{{ states('input_text.growwarn_gh2_hum') }}"
+                val_gh2_hum:   "{{ states(v_gh2_hum) | float(none) }}"
+                out_gh2_hum: >
+                  {{ val_gh2_hum is not none
+                     and (val_gh2_hum < v_gh2_hmin or val_gh2_hum > v_gh2_hmax) }}
+                gh2_hum_low: "{{ val_gh2_hum is not none and val_gh2_hum < v_gh2_hmin }}"
+                gh2_hum_out_since: >
+                  {% set raw = latch_gh2_hum %}
+                  {% if raw.startswith('out_since=') %}
+                    {{ raw.split('=')[1].split('|')[0] | float(0) }}
+                  {% else %}0{% endif %}
+                gh2_hum_ok_since: >
+                  {% set raw = latch_gh2_hum %}
+                  {% if raw.startswith('ok_since=') %}
+                    {{ raw.split('=')[1].split('|')[0] | float(0) }}
+                  {% else %}0{% endif %}
+                gh2_hum_state: >
+                  {% set raw = latch_gh2_hum %}
+                  {% if raw.startswith('out_since=') %}   warned_candidate
+                  {% elif raw.startswith('warned') %}      warned
+                  {% elif raw.startswith('ack') %}         ack
+                  {% elif raw.startswith('ok_since=') %}   ok_candidate
+                  {% else %}                               idle
+                  {% endif %}
+                gh2_hum_last_repeat: >
+                  {% set raw = latch_gh2_hum %}
+                  {% if '|repeat=' in raw %}{{ raw.split('|repeat=')[1] | float(0) }}
+                  {% else %}0{% endif %}
+
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ out_gh2_hum and gh2_hum_state == 'idle' }}"
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_hum
+                      data:
+                        value: "out_since={{ as_timestamp(now()) | round(0) }}"
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ out_gh2_hum and gh2_hum_state == 'warned_candidate'
+                           and (as_timestamp(now()) - gh2_hum_out_since) >= v_trigger_sec }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_hum
+                      data:
+                        value: "warned|repeat={{ as_timestamp(now()) | round(0) }}"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "⚠️ GrowWarn – {{ v_gh2_name }}"
+                                  message: >
+                                    💧 Luftfeuchte
+                                    {{ '📉 zu trocken' if gh2_hum_low else '📈 zu feucht' }}:
+                                    {{ val_gh2_hum | round(1) }}%
+                                    (Grenze: {{ v_gh2_hmin }}–{{ v_gh2_hmax }}%)
+                                    {% if v_bin_en and v_bin_sensor != '' %}
+                                    | {{ v_bin_status_text }}{% endif %}
+                                  data:
+                                    push:
+                                      sound:
+                                        name: "default"
+                                        critical: 1
+                                        volume: 1.0
+                                    actions:
+                                      - action: "ACK_GH2_HUM"
+                                        title: "✅ Bestätigen"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_tts_en and not v_in_quiet and v_tts_target != '' }}"
+                      then:
+                        - repeat:
+                            for_each: !input tts_service
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  entity_id: "{{ v_tts_target }}"
+                                  message: >
+                                    Achtung! {{ v_gh2_name }}: Luftfeuchte
+                                    {{ 'zu niedrig' if gh2_hum_low else 'zu hoch' }}:
+                                    {{ val_gh2_hum | round(1) }} Prozent.
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ out_gh2_hum and gh2_hum_state == 'warned'
+                           and v_repeat_en
+                           and (as_timestamp(now()) - gh2_hum_last_repeat) >= v_repeat_sec }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_hum
+                      data:
+                        value: "warned|repeat={{ as_timestamp(now()) | round(0) }}"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "🔄 GrowWarn – {{ v_gh2_name }} (Wiederholung)"
+                                  message: >
+                                    💧 Luftfeuchte weiterhin
+                                    {{ '📉 zu trocken' if gh2_hum_low else '📈 zu feucht' }}:
+                                    {{ val_gh2_hum | round(1) }}%
+                                  data:
+                                    push:
+                                      sound:
+                                        name: "default"
+                                    actions:
+                                      - action: "ACK_GH2_HUM"
+                                        title: "✅ Bestätigen"
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ not out_gh2_hum
+                           and gh2_hum_state in ['warned','warned_candidate','out_since='] }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_hum
+                      data:
+                        value: "ok_since={{ as_timestamp(now()) | round(0) }}"
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ not out_gh2_hum and gh2_hum_state == 'ok_candidate'
+                           and (as_timestamp(now()) - gh2_hum_ok_since) >= v_reset_sec }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_hum
+                      data:
+                        value: "idle"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_thanks_en and v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "✅ GrowWarn – {{ v_gh2_name }} normal"
+                                  message: "💧 Luftfeuchte wieder im Normalbereich."
+
+        # ────────────────────────────────────────────────────────────────────
+        #  GH2 – Stale (nur wenn aktiviert)
+        # ────────────────────────────────────────────────────────────────────
+        - if:
+            - condition: template
+              value_template: "{{ v_stale_en and v_gh2_en and v_gh2_temp != '' }}"
+          then:
+            - variables:
+                latch_gh2_ts: "{{ states('input_text.growwarn_gh2_temp_stale') }}"
+                age_gh2_temp: >
+                  {{ (as_timestamp(now())
+                      - as_timestamp(states[v_gh2_temp].last_changed) | float(0))
+                     if v_gh2_temp != '' and states[v_gh2_temp] is defined else 9999 }}
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ age_gh2_temp >= v_stale_sec and latch_gh2_ts != 'stale_warned' }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_temp_stale
+                      data:
+                        value: "stale_warned"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "📡 GrowWarn – {{ v_gh2_name }} Sensor offline"
+                                  message: >
+                                    Temperatursensor seit
+                                    {{ (age_gh2_temp / 60) | round(0) }} Minuten ohne Update!
+                                  data:
+                                    push:
+                                      sound:
+                                        name: "default"
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ age_gh2_temp < v_stale_sec and latch_gh2_ts == 'stale_warned' }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_temp_stale
+                      data:
+                        value: "idle"
+
+        - if:
+            - condition: template
+              value_template: "{{ v_stale_en and v_gh2_en and v_gh2_hum != '' }}"
+          then:
+            - variables:
+                latch_gh2_hs: "{{ states('input_text.growwarn_gh2_hum_stale') }}"
+                age_gh2_hum_s: >
+                  {{ (as_timestamp(now())
+                      - as_timestamp(states[v_gh2_hum].last_changed) | float(0))
+                     if v_gh2_hum != '' and states[v_gh2_hum] is defined else 9999 }}
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ age_gh2_hum_s >= v_stale_sec and latch_gh2_hs != 'stale_warned' }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_hum_stale
+                      data:
+                        value: "stale_warned"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "📡 GrowWarn – {{ v_gh2_name }} Sensor offline"
+                                  message: >
+                                    Luftfeuchtesensor seit
+                                    {{ (age_gh2_hum_s / 60) | round(0) }} Minuten ohne Update!
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ age_gh2_hum_s < v_stale_sec and latch_gh2_hs == 'stale_warned' }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh2_hum_stale
+                      data:
+                        value: "idle"
+
+        # ────────────────────────────────────────────────────────────────────
+        #  GH3 – Temp + Hum + Stale  (identische Struktur wie GH2)
+        # ────────────────────────────────────────────────────────────────────
+        - if:
+            - condition: template
+              value_template: "{{ v_gh3_en and v_gh3_temp != '' }}"
+          then:
+            - variables:
+                latch_gh3_temp: "{{ states('input_text.growwarn_gh3_temp') }}"
+                val_gh3_temp:   "{{ states(v_gh3_temp) | float(none) }}"
+                out_gh3_temp: >
+                  {{ val_gh3_temp is not none
+                     and (val_gh3_temp < v_gh3_tmin or val_gh3_temp > v_gh3_tmax) }}
+                gh3_temp_low: "{{ val_gh3_temp is not none and val_gh3_temp < v_gh3_tmin }}"
+                gh3_temp_out_since: >
+                  {% set raw = latch_gh3_temp %}
+                  {% if raw.startswith('out_since=') %}
+                    {{ raw.split('=')[1].split('|')[0] | float(0) }}
+                  {% else %}0{% endif %}
+                gh3_temp_ok_since: >
+                  {% set raw = latch_gh3_temp %}
+                  {% if raw.startswith('ok_since=') %}
+                    {{ raw.split('=')[1].split('|')[0] | float(0) }}
+                  {% else %}0{% endif %}
+                gh3_temp_state: >
+                  {% set raw = latch_gh3_temp %}
+                  {% if raw.startswith('out_since=') %}   warned_candidate
+                  {% elif raw.startswith('warned') %}      warned
+                  {% elif raw.startswith('ack') %}         ack
+                  {% elif raw.startswith('ok_since=') %}   ok_candidate
+                  {% else %}                               idle
+                  {% endif %}
+                gh3_temp_last_repeat: >
+                  {% set raw = latch_gh3_temp %}
+                  {% if '|repeat=' in raw %}{{ raw.split('|repeat=')[1] | float(0) }}
+                  {% else %}0{% endif %}
+
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ out_gh3_temp and gh3_temp_state == 'idle' }}"
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_temp
+                      data:
+                        value: "out_since={{ as_timestamp(now()) | round(0) }}"
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ out_gh3_temp and gh3_temp_state == 'warned_candidate'
+                           and (as_timestamp(now()) - gh3_temp_out_since) >= v_trigger_sec }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_temp
+                      data:
+                        value: "warned|repeat={{ as_timestamp(now()) | round(0) }}"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "⚠️ GrowWarn – {{ v_gh3_name }}"
+                                  message: >
+                                    🌡️ Temperatur
+                                    {{ '🥶 zu kalt' if gh3_temp_low else '🔥 zu warm' }}:
+                                    {{ val_gh3_temp | round(1) }}°C
+                                    (Grenze: {{ v_gh3_tmin }}–{{ v_gh3_tmax }}°C)
+                                    {% if v_bin_en and v_bin_sensor != '' %}
+                                    | {{ v_bin_status_text }}{% endif %}
+                                  data:
+                                    push:
+                                      sound:
+                                        name: "default"
+                                        critical: 1
+                                        volume: 1.0
+                                    actions:
+                                      - action: "ACK_GH3_TEMP"
+                                        title: "✅ Bestätigen"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_tts_en and not v_in_quiet and v_tts_target != '' }}"
+                      then:
+                        - repeat:
+                            for_each: !input tts_service
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  entity_id: "{{ v_tts_target }}"
+                                  message: >
+                                    Achtung! {{ v_gh3_name }}: Temperatur
+                                    {{ 'zu niedrig' if gh3_temp_low else 'zu hoch' }}:
+                                    {{ val_gh3_temp | round(1) }} Grad.
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ out_gh3_temp and gh3_temp_state == 'warned'
+                           and v_repeat_en
+                           and (as_timestamp(now()) - gh3_temp_last_repeat) >= v_repeat_sec }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_temp
+                      data:
+                        value: "warned|repeat={{ as_timestamp(now()) | round(0) }}"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "🔄 GrowWarn – {{ v_gh3_name }} (Wiederholung)"
+                                  message: >
+                                    🌡️ Temperatur weiterhin
+                                    {{ '🥶 zu kalt' if gh3_temp_low else '🔥 zu warm' }}:
+                                    {{ val_gh3_temp | round(1) }}°C
+                                  data:
+                                    push:
+                                      sound:
+                                        name: "default"
+                                    actions:
+                                      - action: "ACK_GH3_TEMP"
+                                        title: "✅ Bestätigen"
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ not out_gh3_temp
+                           and gh3_temp_state in ['warned','warned_candidate','out_since='] }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_temp
+                      data:
+                        value: "ok_since={{ as_timestamp(now()) | round(0) }}"
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ not out_gh3_temp and gh3_temp_state == 'ok_candidate'
+                           and (as_timestamp(now()) - gh3_temp_ok_since) >= v_reset_sec }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_temp
+                      data:
+                        value: "idle"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_thanks_en and v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "✅ GrowWarn – {{ v_gh3_name }} normal"
+                                  message: "🌡️ Temperatur wieder im Normalbereich."
+
+        - if:
+            - condition: template
+              value_template: "{{ v_gh3_en and v_gh3_hum != '' }}"
+          then:
+            - variables:
+                latch_gh3_hum: "{{ states('input_text.growwarn_gh3_hum') }}"
+                val_gh3_hum:   "{{ states(v_gh3_hum) | float(none) }}"
+                out_gh3_hum: >
+                  {{ val_gh3_hum is not none
+                     and (val_gh3_hum < v_gh3_hmin or val_gh3_hum > v_gh3_hmax) }}
+                gh3_hum_low: "{{ val_gh3_hum is not none and val_gh3_hum < v_gh3_hmin }}"
+                gh3_hum_out_since: >
+                  {% set raw = latch_gh3_hum %}
+                  {% if raw.startswith('out_since=') %}
+                    {{ raw.split('=')[1].split('|')[0] | float(0) }}
+                  {% else %}0{% endif %}
+                gh3_hum_ok_since: >
+                  {% set raw = latch_gh3_hum %}
+                  {% if raw.startswith('ok_since=') %}
+                    {{ raw.split('=')[1].split('|')[0] | float(0) }}
+                  {% else %}0{% endif %}
+                gh3_hum_state: >
+                  {% set raw = latch_gh3_hum %}
+                  {% if raw.startswith('out_since=') %}   warned_candidate
+                  {% elif raw.startswith('warned') %}      warned
+                  {% elif raw.startswith('ack') %}         ack
+                  {% elif raw.startswith('ok_since=') %}   ok_candidate
+                  {% else %}                               idle
+                  {% endif %}
+                gh3_hum_last_repeat: >
+                  {% set raw = latch_gh3_hum %}
+                  {% if '|repeat=' in raw %}{{ raw.split('|repeat=')[1] | float(0) }}
+                  {% else %}0{% endif %}
+
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ out_gh3_hum and gh3_hum_state == 'idle' }}"
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_hum
+                      data:
+                        value: "out_since={{ as_timestamp(now()) | round(0) }}"
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ out_gh3_hum and gh3_hum_state == 'warned_candidate'
+                           and (as_timestamp(now()) - gh3_hum_out_since) >= v_trigger_sec }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_hum
+                      data:
+                        value: "warned|repeat={{ as_timestamp(now()) | round(0) }}"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "⚠️ GrowWarn – {{ v_gh3_name }}"
+                                  message: >
+                                    💧 Luftfeuchte
+                                    {{ '📉 zu trocken' if gh3_hum_low else '📈 zu feucht' }}:
+                                    {{ val_gh3_hum | round(1) }}%
+                                    (Grenze: {{ v_gh3_hmin }}–{{ v_gh3_hmax }}%)
+                                    {% if v_bin_en and v_bin_sensor != '' %}
+                                    | {{ v_bin_status_text }}{% endif %}
+                                  data:
+                                    push:
+                                      sound:
+                                        name: "default"
+                                        critical: 1
+                                        volume: 1.0
+                                    actions:
+                                      - action: "ACK_GH3_HUM"
+                                        title: "✅ Bestätigen"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_tts_en and not v_in_quiet and v_tts_target != '' }}"
+                      then:
+                        - repeat:
+                            for_each: !input tts_service
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  entity_id: "{{ v_tts_target }}"
+                                  message: >
+                                    Achtung! {{ v_gh3_name }}: Luftfeuchte
+                                    {{ 'zu niedrig' if gh3_hum_low else 'zu hoch' }}:
+                                    {{ val_gh3_hum | round(1) }} Prozent.
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ out_gh3_hum and gh3_hum_state == 'warned'
+                           and v_repeat_en
+                           and (as_timestamp(now()) - gh3_hum_last_repeat) >= v_repeat_sec }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_hum
+                      data:
+                        value: "warned|repeat={{ as_timestamp(now()) | round(0) }}"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "🔄 GrowWarn – {{ v_gh3_name }} (Wiederholung)"
+                                  message: >
+                                    💧 Luftfeuchte weiterhin
+                                    {{ '📉 zu trocken' if gh3_hum_low else '📈 zu feucht' }}:
+                                    {{ val_gh3_hum | round(1) }}%
+                                  data:
+                                    push:
+                                      sound:
+                                        name: "default"
+                                    actions:
+                                      - action: "ACK_GH3_HUM"
+                                        title: "✅ Bestätigen"
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ not out_gh3_hum
+                           and gh3_hum_state in ['warned','warned_candidate','out_since='] }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_hum
+                      data:
+                        value: "ok_since={{ as_timestamp(now()) | round(0) }}"
+
+                - conditions:
+                    - condition: template
+                      value_template: >
+                        {{ not out_gh3_hum and gh3_hum_state == 'ok_candidate'
+                           and (as_timestamp(now()) - gh3_hum_ok_since) >= v_reset_sec }}
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_hum
+                      data:
+                        value: "idle"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_thanks_en and v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "✅ GrowWarn – {{ v_gh3_name }} normal"
+                                  message: "💧 Luftfeuchte wieder im Normalbereich."
+
+        - if:
+            - condition: template
+              value_template: "{{ v_stale_en and v_gh3_en and v_gh3_temp != '' }}"
+          then:
+            - variables:
+                latch_gh3_ts: "{{ states('input_text.growwarn_gh3_temp_stale') }}"
+                age_gh3_temp: >
+                  {{ (as_timestamp(now())
+                      - as_timestamp(states[v_gh3_temp].last_changed) | float(0))
+                     if v_gh3_temp != '' and states[v_gh3_temp] is defined else 9999 }}
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ age_gh3_temp >= v_stale_sec and latch_gh3_ts != 'stale_warned' }}"
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_temp_stale
+                      data:
+                        value: "stale_warned"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "📡 GrowWarn – {{ v_gh3_name }} Sensor offline"
+                                  message: >
+                                    Temperatursensor seit
+                                    {{ (age_gh3_temp / 60) | round(0) }} Minuten ohne Update!
+                - conditions:
+                    - condition: template
+                      value_template: "{{ age_gh3_temp < v_stale_sec and latch_gh3_ts == 'stale_warned' }}"
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_temp_stale
+                      data:
+                        value: "idle"
+
+        - if:
+            - condition: template
+              value_template: "{{ v_stale_en and v_gh3_en and v_gh3_hum != '' }}"
+          then:
+            - variables:
+                latch_gh3_hs: "{{ states('input_text.growwarn_gh3_hum_stale') }}"
+                age_gh3_hum_s: >
+                  {{ (as_timestamp(now())
+                      - as_timestamp(states[v_gh3_hum].last_changed) | float(0))
+                     if v_gh3_hum != '' and states[v_gh3_hum] is defined else 9999 }}
+            - choose:
+                - conditions:
+                    - condition: template
+                      value_template: "{{ age_gh3_hum_s >= v_stale_sec and latch_gh3_hs != 'stale_warned' }}"
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_hum_stale
+                      data:
+                        value: "stale_warned"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_notify_en }}"
+                      then:
+                        - repeat:
+                            for_each: !input notify_targets
+                            sequence:
+                              - service: "{{ repeat.item }}"
+                                data:
+                                  title: "📡 GrowWarn – {{ v_gh3_name }} Sensor offline"
+                                  message: >
+                                    Luftfeuchtesensor seit
+                                    {{ (age_gh3_hum_s / 60) | round(0) }} Minuten ohne Update!
+                - conditions:
+                    - condition: template
+                      value_template: "{{ age_gh3_hum_s < v_stale_sec and latch_gh3_hs == 'stale_warned' }}"
+                  sequence:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_gh3_hum_stale
+                      data:
+                        value: "idle"
+
+    # ════════════════════════════════════════════════════════════════════════
+    #  CASE 2: ACK – Notification Action vom iOS Gerät
+    # ════════════════════════════════════════════════════════════════════════
+    - conditions:
+        - condition: trigger
+          id: "ack_action"
+      sequence:
+        - choose:
+
+            # ── ACK GH1 Temp ──────────────────────────────────────────────
+            - conditions:
+                - condition: template
+                  value_template: "{{ v_ack_action == 'ACK_GH1_TEMP' }}"
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh1_temp
+                  data:
+                    value: "ack|ts={{ as_timestamp(now()) | round(0) }}"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_thanks_en and v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "👍 GrowWarn – {{ v_gh1_name }} quittiert"
+                              message: >
+                                Temperaturwarnung bestätigt.
+                                Nächste Meldung erst nach Reset ({{ v_reset_for.minutes | default(5) }} Min. Normalbereich).
+
+            # ── ACK GH1 Hum ───────────────────────────────────────────────
+            - conditions:
+                - condition: template
+                  value_template: "{{ v_ack_action == 'ACK_GH1_HUM' }}"
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh1_hum
+                  data:
+                    value: "ack|ts={{ as_timestamp(now()) | round(0) }}"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_thanks_en and v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "👍 GrowWarn – {{ v_gh1_name }} quittiert"
+                              message: "Luftfeuchtewarnung bestätigt."
+
+            # ── ACK GH2 Temp ──────────────────────────────────────────────
+            - conditions:
+                - condition: template
+                  value_template: "{{ v_ack_action == 'ACK_GH2_TEMP' }}"
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh2_temp
+                  data:
+                    value: "ack|ts={{ as_timestamp(now()) | round(0) }}"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_thanks_en and v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "👍 GrowWarn – {{ v_gh2_name }} quittiert"
+                              message: "Temperaturwarnung bestätigt."
+
+            # ── ACK GH2 Hum ───────────────────────────────────────────────
+            - conditions:
+                - condition: template
+                  value_template: "{{ v_ack_action == 'ACK_GH2_HUM' }}"
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh2_hum
+                  data:
+                    value: "ack|ts={{ as_timestamp(now()) | round(0) }}"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_thanks_en and v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "👍 GrowWarn – {{ v_gh2_name }} quittiert"
+                              message: "Luftfeuchtewarnung bestätigt."
+
+            # ── ACK GH3 Temp ──────────────────────────────────────────────
+            - conditions:
+                - condition: template
+                  value_template: "{{ v_ack_action == 'ACK_GH3_TEMP' }}"
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh3_temp
+                  data:
+                    value: "ack|ts={{ as_timestamp(now()) | round(0) }}"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_thanks_en and v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "👍 GrowWarn – {{ v_gh3_name }} quittiert"
+                              message: "Temperaturwarnung bestätigt."
+
+            # ── ACK GH3 Hum ───────────────────────────────────────────────
+            - conditions:
+                - condition: template
+                  value_template: "{{ v_ack_action == 'ACK_GH3_HUM' }}"
+              sequence:
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_gh3_hum
+                  data:
+                    value: "ack|ts={{ as_timestamp(now()) | round(0) }}"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_thanks_en and v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "👍 GrowWarn – {{ v_gh3_name }} quittiert"
+                              message: "Luftfeuchtewarnung bestätigt."
+
+        # Nach ACK: Latch verbleibt auf 'ack' bis reset_for im Normalbereich
+        # (Poll-Loop erkennt 'ack' State und behandelt Reset wie 'warned':
+        #  setzt ok_since → wartet reset_for → idle)
+        # Wichtig: im Poll-Block wurde 'ack' bewusst NICHT auf ok_since gesetzt
+        # um den ACK zu respektieren. Die nächste poll-Iteration nach dem Wert-
+        # Normalbereich setzt ok_since, dann nach reset_for → idle.
+        # Erweiterung für ACK → ok_since Übergang:
+        - variables:
+            gh1_temp_ack_raw: "{{ states('input_text.growwarn_gh1_temp') }}"
+            gh1_hum_ack_raw:  "{{ states('input_text.growwarn_gh1_hum') }}"
+            gh2_temp_ack_raw: "{{ states('input_text.growwarn_gh2_temp') }}"
+            gh2_hum_ack_raw:  "{{ states('input_text.growwarn_gh2_hum') }}"
+            gh3_temp_ack_raw: "{{ states('input_text.growwarn_gh3_temp') }}"
+            gh3_hum_ack_raw:  "{{ states('input_text.growwarn_gh3_hum') }}"
+
+    # ════════════════════════════════════════════════════════════════════════
+    #  CASE 3: Binärsensor – Zustandsänderung (Tür auf/zu)
+    # ════════════════════════════════════════════════════════════════════════
+    - conditions:
+        - condition: trigger
+          id: "binary_change"
+        - condition: template
+          value_template: "{{ v_bin_en and v_bin_sensor != '' }}"
+      sequence:
+        - variables:
+            bin_new_state:  "{{ trigger.to_state.state }}"
+            bin_is_now_open: "{{ bin_new_state == v_bin_open_state }}"
+
+        - choose:
+            # Tür / Sensor GEÖFFNET
+            - conditions:
+                - condition: template
+                  value_template: "{{ bin_is_now_open }}"
+              sequence:
+                - if:
+                    - condition: template
+                      value_template: "{{ v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "🚪 GrowWarn – {{ v_bin_name }} geöffnet"
+                              message: "{{ v_bin_name }} wurde geöffnet."
+                              data:
+                                push:
+                                  sound:
+                                    name: "default"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_tts_en and not v_in_quiet and v_tts_target != '' }}"
+                  then:
+                    - repeat:
+                        for_each: !input tts_service
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              entity_id: "{{ v_tts_target }}"
+                              message: "{{ v_bin_name }} wurde geöffnet."
+                # Custom Aktion bei Öffnen
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "true"
+                      sequence: !input binary_action_open
+
+                # Timer-Warnung: nach binary_timer_minutes noch offen?
+                # Implementierung via input_text Latch + poll
+                - if:
+                    - condition: template
+                      value_template: "{{ v_bin_timer_min > 0 }}"
+                  then:
+                    - service: input_text.set_value
+                      target:
+                        entity_id: input_text.growwarn_binary_latch
+                      data:
+                        value: "open_since={{ as_timestamp(now()) | round(0) }}"
+
+            # Tür / Sensor GESCHLOSSEN
+            - conditions:
+                - condition: template
+                  value_template: "{{ not bin_is_now_open }}"
+              sequence:
+                - if:
+                    - condition: template
+                      value_template: "{{ v_notify_en }}"
+                  then:
+                    - repeat:
+                        for_each: !input notify_targets
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              title: "🚪 GrowWarn – {{ v_bin_name }} geschlossen"
+                              message: "{{ v_bin_name }} wurde geschlossen."
+                              data:
+                                push:
+                                  sound:
+                                    name: "default"
+                - if:
+                    - condition: template
+                      value_template: "{{ v_tts_en and not v_in_quiet and v_tts_target != '' }}"
+                  then:
+                    - repeat:
+                        for_each: !input tts_service
+                        sequence:
+                          - service: "{{ repeat.item }}"
+                            data:
+                              entity_id: "{{ v_tts_target }}"
+                              message: "{{ v_bin_name }} wurde geschlossen."
+                # Custom Aktion bei Schließen
+                - choose:
+                    - conditions:
+                        - condition: template
+                          value_template: "true"
+                      sequence: !input binary_action_close
+                # Timer-Latch zurücksetzen
+                - service: input_text.set_value
+                  target:
+                    entity_id: input_text.growwarn_binary_latch
+                  data:
+                    value: "idle"
+
+  # ── Poll: Binärsensor-Timer-Check (innerhalb poll-Trigger) ───────────────
+  - if:
+      - condition: trigger
+        id: "poll"
+      - condition: template
+        value_template: >
+          {{ v_bin_en and v_bin_sensor != ''
+             and v_bin_timer_min > 0
+             and v_bin_is_open }}
+    then:
+      - variables:
+          bin_latch_raw: "{{ states('input_text.growwarn_binary_latch') }}"
+          bin_open_since: >
+            {% if bin_latch_raw.startswith('open_since=') %}
+              {{ bin_latch_raw.split('=')[1] | float(0) }}
+            {% else %}0{% endif %}
+          bin_timer_sec: "{{ v_bin_timer_min * 60 }}"
+          bin_open_elapsed: "{{ as_timestamp(now()) - bin_open_since }}"
+
+      - choose:
+          - conditions:
+              - condition: template
+                value_template: >
+                  {{ bin_latch_raw.startswith('open_since=')
+                     and bin_open_elapsed >= bin_timer_sec }}
+            sequence:
+              - service: input_text.set_value
+                target:
+                  entity_id: input_text.growwarn_binary_latch
+                data:
+                  value: "timer_warned"
+              - if:
+                  - condition: template
+                    value_template: "{{ v_notify_en }}"
+                then:
+                  - repeat:
+                      for_each: !input notify_targets
+                      sequence:
+                        - service: "{{ repeat.item }}"
+                          data:
+                            title: "⏱️ GrowWarn – {{ v_bin_name }} noch offen!"
+                            message: >
+                              {{ v_bin_name }} ist seit
+                              {{ v_bin_timer_min }} Minuten geöffnet!
+                            data:
+                              push:
+                                sound:
+                                  name: "default"
+                                  critical: 1
+                                  volume: 1.0
+              - if:
+                  - condition: template
+                    value_template: "{{ v_tts_en and not v_in_quiet and v_tts_target != '' }}"
+                then:
+                  - repeat:
+                      for_each: !input tts_service
+                      sequence:
+                        - service: "{{ repeat.item }}"
+                          data:
+                            entity_id: "{{ v_tts_target }}"
+                            message: >
+                              Achtung! {{ v_bin_name }} ist seit
+                              {{ v_bin_timer_min }} Minuten noch geöffnet!
+
+  # ── ACK: Latch 'ack' → ok_since sobald Wert wieder normal (Poll) ─────────
+  # Diese Sektion verarbeitet den Übergang ack → ok_since im Poll-Trigger
+  - if:
+      - condition: trigger
+        id: "poll"
+    then:
+      # GH1 Temp ACK-Reset
+      - variables:
+          _gh1t_raw:  "{{ states('input_text.growwarn_gh1_temp') }}"
+          _gh1t_val:  "{{ states(v_gh1_temp) | float(none) }}"
+          _gh1t_out:  >
+            {{ _gh1t_val is not none
+               and (_gh1t_val < v_gh1_tmin or _gh1t_val > v_gh1_tmax) }}
+      - if:
+          - condition: template
+            value_template: >
+              {{ _gh1t_raw.startswith('ack') and not _gh1t_out }}
+        then:
+          - service: input_text.set_value
+            target:
+              entity_id: input_text.growwarn_gh1_temp
+            data:
+              value: "ok_since={{ as_timestamp(now()) | round(0) }}"
+
+      # GH1 Hum ACK-Reset
+      - variables:
+          _gh1h_raw:  "{{ states('input_text.growwarn_gh1_hum') }}"
+          _gh1h_val:  "{{ states(v_gh1_hum) | float(none) }}"
+          _gh1h_out:  >
+            {{ _gh1h_val is not none
+               and (_gh1h_val < v_gh1_hmin or _gh1h_val > v_gh1_hmax) }}
+      - if:
+          - condition: template
+            value_template: >
+              {{ _gh1h_raw.startswith('ack') and not _gh1h_out }}
+        then:
+          - service: input_text.set_value
+            target:
+              entity_id: input_text.growwarn_gh1_hum
+            data:
+              value: "ok_since={{ as_timestamp(now()) | round(0) }}"
+
+      # GH2 Temp ACK-Reset (nur wenn aktiv)
+      - if:
+          - condition: template
+            value_template: "{{ v_gh2_en and v_gh2_temp != '' }}"
+        then:
+          - variables:
+              _gh2t_raw: "{{ states('input_text.growwarn_gh2_temp') }}"
+              _gh2t_val: "{{ states(v_gh2_temp) | float(none) }}"
+              _gh2t_out: >
+                {{ _gh2t_val is not none
+                   and (_gh2t_val < v_gh2_tmin or _gh2t_val > v_gh2_tmax) }}
+          - if:
+              - condition: template
+                value_template: >
+                  {{ _gh2t_raw.startswith('ack') and not _gh2t_out }}
+            then:
+              - service: input_text.set_value
+                target:
+                  entity_id: input_text.growwarn_gh2_temp
+                data:
+                  value: "ok_since={{ as_timestamp(now()) | round(0) }}"
+
+      # GH2 Hum ACK-Reset
+      - if:
+          - condition: template
+            value_template: "{{ v_gh2_en and v_gh2_hum != '' }}"
+        then:
+          - variables:
+              _gh2h_raw: "{{ states('input_text.growwarn_gh2_hum') }}"
+              _gh2h_val: "{{ states(v_gh2_hum) | float(none) }}"
+              _gh2h_out: >
+                {{ _gh2h_val is not none
+                   and (_gh2h_val < v_gh2_hmin or _gh2h_val > v_gh2_hmax) }}
+          - if:
+              - condition: template
+                value_template: >
+                  {{ _gh2h_raw.startswith('ack') and not _gh2h_out }}
+            then:
+              - service: input_text.set_value
+                target:
+                  entity_id: input_text.growwarn_gh2_hum
+                data:
+                  value: "ok_since={{ as_timestamp(now()) | round(0) }}"
+
+      # GH3 Temp ACK-Reset
+      - if:
+          - condition: template
+            value_template: "{{ v_gh3_en and v_gh3_temp != '' }}"
+        then:
+          - variables:
+              _gh3t_raw: "{{ states('input_text.growwarn_gh3_temp') }}"
+              _gh3t_val: "{{ states(v_gh3_temp) | float(none) }}"
+              _gh3t_out: >
+                {{ _gh3t_val is not none
+                   and (_gh3t_val < v_gh3_tmin or _gh3t_val > v_gh3_tmax) }}
+          - if:
+              - condition: template
+                value_template: >
+                  {{ _gh3t_raw.startswith('ack') and not _gh3t_out }}
+            then:
+              - service: input_text.set_value
+                target:
+                  entity_id: input_text.growwarn_gh3_temp
+                data:
+                  value: "ok_since={{ as_timestamp(now()) | round(0) }}"
+
+      # GH3 Hum ACK-Reset
+      - if:
+          - condition: template
+            value_template: "{{ v_gh3_en and v_gh3_hum != '' }}"
+        then:
+          - variables:
+              _gh3h_raw: "{{ states('input_text.growwarn_gh3_hum') }}"
+              _gh3h_val: "{{ states(v_gh3_hum) | float(none) }}"
+              _gh3h_out: >
+                {{ _gh3h_val is not none
+                   and (_gh3h_val < v_gh3_hmin or _gh3h_val > v_gh3_hmax) }}
+          - if:
+              - condition: template
+                value_template: >
+                  {{ _gh3h_raw.startswith('ack') and not _gh3h_out }}
+            then:
+              - service: input_text.set_value
+                target:
+                  entity_id: input_text.growwarn_gh3_hum
+                data:
+                  value: "ok_since={{ as_timestamp(now()) | round(0) }}"
+
+mode: queued
+max: 10
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  LATCH-ZUSTANDSMASCHINE  (Referenz)
+# ═══════════════════════════════════════════════════════════════════════════
+#
+#  idle
+#    │ Wert außerhalb
+#    ▼
+#  out_since=<ts>          ← Kandidat: Wert außerhalb, Frist läuft
+#    │ trigger_for abgelaufen
+#    ▼
+#  warned|repeat=<ts>      ← Gewarnt (Repeat-Timestamp für Wiederholung)
+#    │ User drückt ACK     │ Wert wieder normal
+#    ▼                     ▼
+#  ack|ts=<ts>          ok_since=<ts>
+#    │ Wert normal            │ reset_for abgelaufen
+#    ▼                        ▼
+#  ok_since=<ts>           idle
+#    │ reset_for abgelaufen
+#    ▼
+#  idle
+#
+#  Wiederholung (nur wenn repeat_enabled):
+#    warned|repeat=<ts>  →  nach repeat_interval erneut warnen (kein ACK gesetzt)
+#
+# ═══════════════════════════════════════════════════════════════════════════
+#  NOTIFY_TARGETS – Hinweis iOS
+# ═══════════════════════════════════════════════════════════════════════════
+#  Der 'target'-Selector im Blueprint wählt Entitäten/Geräte aus.
+#  Für iOS Companion App lautet der Dienst:
+#    notify.mobile_app_<geraetename>
+#  Im Blueprint wird !input notify_targets als Liste übergeben und per
+#  repeat: for_each iteriert. Stelle sicher, dass du als Ziel die
+#  notify-Dienst-Entitäten (nicht Geräte-Entitäten) auswählst.
+#
+#  Falls der target-Selector keine notify-Dienste anzeigt, trage die
+#  Dienstnamen alternativ direkt im Script-Editor ein:
+#    - notify.mobile_app_iphone_max
+#    - notify.mobile_app_ipad_wohnzimmer
+# ═══════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,852 @@
+blueprint:
+  name: "🚪 Tür offen – Alarm Pro v4"
+  description: >
+    🏠 Vollständiger Tür-Alarm mit TTS & Push.
+    ✅ Danke-Ansage nur nach echtem Alarm-Trigger.
+    🔇 TTS & Push getrennt steuerbar mit eigenen Schlafzeiten.
+    🔋 Batterie-Warnung: sensor.* (%) UND binary_sensor.* (LOWBAT) – mehrere Entities möglich.
+    🔁 Wiederholungsansagen mit Custom Actions.
+    🐛 v4: Bugfixes – Tür-TTS zuerst, dann Batterie; Boolean-String-Fix; Batterie multi-Entity.
+    HA 2024.10+ kompatibel.
+  domain: automation
+  author: "magicx78"
+  homeassistant:
+    min_version: "2024.10.0"
+
+  input:
+
+    # ════════════════════════════════════════════════════════
+    # SEKTION 1: 🚪 Tür & Timing
+    # ════════════════════════════════════════════════════════
+    section_trigger:
+      name: "🚪 Tür & Timing"
+      icon: mdi:door-open
+      input:
+        door_entity:
+          name: "🚪 Tür-Sensor(en)"
+          description: "Ein oder mehrere binary_sensor Entities (Tür/Fenster)"
+          selector:
+            entity:
+              filter:
+                domain: binary_sensor
+              multiple: true
+
+        initial_delay:
+          name: "⏱️ Wartezeit bis erste Ansage (Sekunden)"
+          description: "Wie lange soll gewartet werden bevor der Alarm ausgelöst wird?"
+          default: 60
+          selector:
+            number:
+              min: 10
+              max: 3600
+              unit_of_measurement: "Sek"
+              mode: box
+
+        trigger_debounce_seconds:
+          name: "🧯 Entprellzeit (Sekunden)"
+          description: "Tür muss so lange stabil on/off sein, bevor ausgelöst wird (2–5 Sek empfohlen)."
+          default: 1
+          selector:
+            number:
+              min: 1
+              max: 10
+              unit_of_measurement: "Sek"
+              mode: slider
+
+    # ════════════════════════════════════════════════════════
+    # SEKTION 2: 🔊 Sprachausgabe (TTS)
+    # ════════════════════════════════════════════════════════
+    section_tts:
+      name: "🔊 Sprachausgabe (TTS)"
+      icon: mdi:speaker-message
+      input:
+        tts_enabled:
+          name: "🔊 Sprachausgabe aktivieren"
+          default: true
+          selector:
+            boolean: {}
+
+        media_player_entity:
+          name: "🔈 Lautsprecher"
+          description: "Einen oder mehrere Media Player für die TTS-Ausgabe"
+          selector:
+            entity:
+              filter:
+                domain: media_player
+              multiple: true
+
+        tts_service:
+          name: "⚙️ TTS Service"
+          description: "Welcher TTS-Dienst? z.B. tts.cloud_say (Nabu Casa) oder tts.google_translate_say"
+          default: "tts.cloud_say"
+          selector:
+            select:
+              options:
+                - "tts.cloud_say"
+                - "tts.google_translate_say"
+                - "tts.openai_tts"
+              custom_value: true
+
+        tts_language:
+          name: "🌍 Sprache (optional)"
+          description: "z.B. 'de-DE' – leer lassen für Standardsprache des TTS-Dienstes"
+          default: ""
+          selector:
+            text: {}
+
+        message_first:
+          name: "💬 Erste Ansage"
+          description: "Platzhalter: {trigger_name}"
+          default: "Achtung! Die {trigger_name} ist offen."
+          selector:
+            text:
+              multiline: true
+
+        message_repeat:
+          name: "🔁 Wiederholungs-Ansage"
+          description: "Platzhalter: {trigger_name}, {open_minutes}"
+          default: "Achtung! {trigger_name} ist seit {open_minutes} Minuten offen! Bitte schließen!"
+          selector:
+            text:
+              multiline: true
+
+        message_closed:
+          name: "🙏 Danke-Ansage (beim Schließen)"
+          description: "Platzhalter: {trigger_name}"
+          default: "Danke! Die {trigger_name} wurde geschlossen."
+          selector:
+            text:
+              multiline: true
+
+        thank_you_mode:
+          name: "🙏 Wann soll die Danke-Ansage kommen?"
+          description: >
+            'Immer' = bei jedem Schließen der Tür (auch wenn kein Alarm ausgelöst wurde).
+            'Nur nach Alarm' = nur wenn vorher wirklich eine Alarm-Ansage erfolgte.
+          default: "nur_nach_alarm"
+          selector:
+            select:
+              options:
+                - label: "🔔 Immer beim Schließen"
+                  value: "immer"
+                - label: "🚨 Nur nach Alarm-Trigger"
+                  value: "nur_nach_alarm"
+
+        # TTS Schlafzeit – getrennt von Push
+        tts_sleep_start:
+          name: "😴 TTS Schlafzeit Beginn (optional)"
+          description: "In dieser Zeit wird KEINE Sprachausgabe gemacht. Format: HH:MM:SS. '00:00:00' = deaktiviert."
+          default: "00:00:00"
+          selector:
+            time: {}
+
+        tts_sleep_end:
+          name: "☀️ TTS Schlafzeit Ende (optional)"
+          description: "Format: HH:MM:SS – Mitternacht-übergreifend wird korrekt erkannt. '00:00:00' = deaktiviert."
+          default: "00:00:00"
+          selector:
+            time: {}
+
+    # ════════════════════════════════════════════════════════
+    # SEKTION 3: 🔔 Chime
+    # ════════════════════════════════════════════════════════
+    section_chime:
+      name: "🔔 Chime (Ton vor Ansage)"
+      icon: mdi:bell-ring
+      collapsed: true
+      input:
+        chime_url:
+          name: "🔔 Chime URL"
+          description: >
+            URL zur Audiodatei, die VOR der ersten TTS-Ansage abgespielt wird.
+            Beispiel (eigene Datei in HA): http://192.168.1.100:8123/local/chime.mp3
+            Leer lassen = kein Chime.
+          default: ""
+          selector:
+            text: {}
+
+        chime_media_content_type:
+          name: "📄 Content Type"
+          description: "MIME-Typ der Audiodatei"
+          default: "audio/mp3"
+          selector:
+            select:
+              options:
+                - "audio/mp3"
+                - "audio/wav"
+                - "audio/ogg"
+              custom_value: true
+
+        chime_wait_seconds:
+          name: "⏳ Wartezeit nach Chime (Sekunden)"
+          description: "Pause zwischen Chime und erster TTS-Ansage"
+          default: 2
+          selector:
+            number:
+              min: 0
+              max: 30
+              unit_of_measurement: "Sek"
+
+    # ════════════════════════════════════════════════════════
+    # SEKTION 4: 🔁 Wiederholung
+    # ════════════════════════════════════════════════════════
+    section_repeat:
+      name: "🔁 Wiederholung"
+      icon: mdi:repeat
+      input:
+        repeat_enabled:
+          name: "🔁 Wiederholung aktivieren"
+          default: true
+          selector:
+            boolean: {}
+
+        repeat_interval:
+          name: "⏱️ Wiederholungsintervall (Sekunden)"
+          default: 60
+          selector:
+            number:
+              min: 10
+              max: 600
+              unit_of_measurement: "Sek"
+              mode: box
+
+    # ════════════════════════════════════════════════════════
+    # SEKTION 5: 📲 Push-Benachrichtigung
+    # ════════════════════════════════════════════════════════
+    section_notify:
+      name: "📲 Push-Benachrichtigung (optional)"
+      icon: mdi:cellphone-bell
+      collapsed: true
+      input:
+        notify_enabled:
+          name: "📲 Push-Benachrichtigung aktivieren"
+          default: false
+          selector:
+            boolean: {}
+
+        notify_services:
+          name: "📱 Notify Services"
+          description: "Kommagetrennte Liste z.B.: notify.mobile_app_iphone,notify.mobile_app_pixel"
+          default: ""
+          selector:
+            text: {}
+
+        notify_title:
+          name: "📌 Push-Titel"
+          description: "Platzhalter: {trigger_name}"
+          default: "🚪 Tür offen: {trigger_name}"
+          selector:
+            text: {}
+
+        notify_message:
+          name: "💬 Push-Nachricht"
+          description: "Platzhalter: {trigger_name}, {open_minutes}"
+          default: "Die {trigger_name} steht seit {open_minutes} Minuten offen!"
+          selector:
+            text:
+              multiline: true
+
+        notify_interruption_level:
+          name: "🔔 iOS Interruption Level"
+          default: "active"
+          selector:
+            select:
+              options:
+                - label: "🔔 active (Standard)"
+                  value: "active"
+                - label: "⏰ time-sensitive (Dringlich)"
+                  value: "time-sensitive"
+                - label: "🚨 critical (Immer, auch DND)"
+                  value: "critical"
+                - label: "🔕 passive (Lautlos)"
+                  value: "passive"
+
+        # Push Schlafzeit – getrennt von TTS
+        push_sleep_start:
+          name: "😴 Push Schlafzeit Beginn (optional)"
+          description: "In dieser Zeit werden KEINE Push-Nachrichten gesendet. '00:00:00' = deaktiviert."
+          default: "00:00:00"
+          selector:
+            time: {}
+
+        push_sleep_end:
+          name: "☀️ Push Schlafzeit Ende (optional)"
+          description: "Format: HH:MM:SS – Mitternacht-übergreifend wird korrekt erkannt. '00:00:00' = deaktiviert."
+          default: "00:00:00"
+          selector:
+            time: {}
+
+    # ════════════════════════════════════════════════════════
+    # SEKTION 6: 🔋 Batterie-Warnung
+    # ════════════════════════════════════════════════════════
+    section_battery:
+      name: "🔋 Batterie-Warnung (optional)"
+      icon: mdi:battery-alert
+      collapsed: true
+      input:
+        battery_warn_enabled:
+          name: "🔋 Batterie-Warnung aktivieren"
+          default: false
+          selector:
+            boolean: {}
+
+        battery_sensor:
+          name: "🔋 Batterie-Entity(s) des Tür-Sensors"
+          description: >
+            Mehrere Entities möglich!
+            📊 sensor.* mit Prozentwert (z.B. sensor.tuer_battery = 45%)
+            🔴 binary_sensor.* mit LOWBAT on/off (z.B. binary_sensor.lager_tuer_batterie)
+            Bei binary_sensor gilt: on = Batterie leer.
+            Leer lassen um Batterie-Warnung zu deaktivieren.
+          default: []
+          selector:
+            entity:
+              filter:
+                - domain: sensor
+                  device_class: battery
+                - domain: binary_sensor
+                  device_class: battery
+              multiple: true
+
+        battery_threshold:
+          name: "⚡ Batterie-Schwellwert (%) – nur für sensor.*"
+          description: >
+            Warnung wenn Prozentwert UNTER diesen Wert fällt.
+            Wird bei binary_sensor (LOWBAT) ignoriert.
+          default: 20
+          selector:
+            number:
+              min: 5
+              max: 50
+              unit_of_measurement: "%"
+              mode: slider
+
+        battery_notify_push:
+          name: "📲 Batterie-Warnung per Push"
+          default: true
+          selector:
+            boolean: {}
+
+        battery_notify_tts:
+          name: "🔊 Batterie-Warnung per Sprachausgabe"
+          default: false
+          selector:
+            boolean: {}
+
+        battery_notify_title:
+          name: "📌 Batterie Push-Titel"
+          description: "Platzhalter: {trigger_name}, {battery_level}"
+          default: "🔋 Batterie-Warnung: {trigger_name}"
+          selector:
+            text: {}
+
+        battery_notify_message:
+          name: "💬 Batterie Push-Nachricht"
+          description: "Platzhalter: {trigger_name}, {battery_level}"
+          default: "⚠️ Der Akku von {trigger_name} ist nur noch bei {battery_level}! Bitte bald wechseln."
+          selector:
+            text:
+              multiline: true
+
+        battery_tts_message:
+          name: "🔊 Batterie TTS-Ansage"
+          description: "Platzhalter: {trigger_name}, {battery_level}"
+          default: "Achtung! Der Akku des Sensors {trigger_name} ist schwach. Stand: {battery_level}."
+          selector:
+            text:
+              multiline: true
+
+        battery_interruption_level:
+          name: "🔔 iOS Interruption Level für Batterie"
+          default: "active"
+          selector:
+            select:
+              options:
+                - label: "🔔 active"
+                  value: "active"
+                - label: "⏰ time-sensitive"
+                  value: "time-sensitive"
+                - label: "🚨 critical"
+                  value: "critical"
+                - label: "🔕 passive"
+                  value: "passive"
+
+    # ════════════════════════════════════════════════════════
+    # SEKTION 7: ⚙️ Bypass & Deaktivierung
+    # ════════════════════════════════════════════════════════
+    section_control:
+      name: "⚙️ Bypass & Deaktivierung"
+      icon: mdi:shield-off
+      collapsed: true
+      input:
+        disable_switch:
+          name: "🔴 Deaktivierungs-Schalter (optional)"
+          description: "input_boolean – wenn 'on', wird die gesamte Automation deaktiviert"
+          default: ""
+          selector:
+            entity:
+              filter:
+                domain: input_boolean
+
+        bypass_entities:
+          name: "🛡️ Bypass-Entities (optional)"
+          description: "Wenn eine dieser Entities 'on' ist, wird kein Alarm ausgelöst (z.B. Anwesenheit, Urlaub)"
+          default: []
+          selector:
+            entity:
+              multiple: true
+
+    # ════════════════════════════════════════════════════════
+    # SEKTION 8: 🎬 Custom Actions
+    # ════════════════════════════════════════════════════════
+    section_custom_actions:
+      name: "🎬 Custom Actions (optional)"
+      icon: mdi:script-text
+      collapsed: true
+      input:
+        action_on_open:
+          name: "🚪 Aktion beim Öffnen (nach erster Ansage)"
+          default: []
+          selector:
+            action: {}
+
+        action_on_close:
+          name: "🚪 Aktion beim Schließen"
+          default: []
+          selector:
+            action: {}
+
+# ════════════════════════════════════════════════════════════════════════════════
+# AUTOMATION ENGINE
+# ════════════════════════════════════════════════════════════════════════════════
+
+mode: parallel
+max: 20
+max_exceeded: silent
+
+variables:
+  v_door_entity: !input door_entity
+  v_initial_delay: !input initial_delay
+  v_debounce: !input trigger_debounce_seconds
+  v_tts_enabled: !input tts_enabled
+  v_media_players: !input media_player_entity
+  v_tts_service: !input tts_service
+  v_tts_language: !input tts_language
+  v_msg_first: !input message_first
+  v_msg_repeat: !input message_repeat
+  v_msg_closed: !input message_closed
+  v_thank_you_mode: !input thank_you_mode
+  v_tts_sleep_start: !input tts_sleep_start
+  v_tts_sleep_end: !input tts_sleep_end
+  v_chime_url: !input chime_url
+  v_chime_type: !input chime_media_content_type
+  v_chime_wait: !input chime_wait_seconds
+  v_repeat_enabled: !input repeat_enabled
+  v_repeat_interval: !input repeat_interval
+  v_notify_enabled: !input notify_enabled
+  v_notify_services: !input notify_services
+  v_notify_title: !input notify_title
+  v_notify_message: !input notify_message
+  v_notify_level: !input notify_interruption_level
+  v_push_sleep_start: !input push_sleep_start
+  v_push_sleep_end: !input push_sleep_end
+  v_battery_warn_enabled: !input battery_warn_enabled
+  v_battery_sensors: !input battery_sensor
+  v_battery_threshold: !input battery_threshold
+  v_battery_notify_push: !input battery_notify_push
+  v_battery_notify_tts: !input battery_notify_tts
+  v_battery_notify_title: !input battery_notify_title
+  v_battery_notify_message: !input battery_notify_message
+  v_battery_tts_message: !input battery_tts_message
+  v_battery_interruption_level: !input battery_interruption_level
+  v_disable_switch: !input disable_switch
+  v_bypass_entities: !input bypass_entities
+
+# FIX: Für Blueprints robust: trigger/action (singular) + platform:
+trigger:
+  - platform: state
+    entity_id: !input door_entity
+    to: "on"
+    id: door_opened
+    for:
+      seconds: !input trigger_debounce_seconds
+
+  - platform: state
+    entity_id: !input door_entity
+    to: "off"
+    id: door_closed
+    for:
+      seconds: !input trigger_debounce_seconds
+
+action:
+  # ── Laufzeit-Variablen ────────────────────────────────────────────────────
+  - variables:
+      v_triggered_door: "{{ trigger.entity_id }}"
+      v_trig_name: "{{ state_attr(trigger.entity_id, 'friendly_name') | default(trigger.entity_id) }}"
+
+  - choose:
+
+      # ╔══════════════════════════════════════════════════════════════════════╗
+      # ║  PFAD A: Tür geschlossen                                             ║
+      # ╚══════════════════════════════════════════════════════════════════════╝
+      - conditions:
+          - condition: trigger
+            id: door_closed
+        sequence:
+          # Danke-Ansage:
+          # - Modus "immer": immer beim Schließen
+          # - Modus "nur_nach_alarm": nur wenn die Tür länger offen war als initial_delay
+          #   (Fix: zuverlässig trotz mode: restart, weil door_closed immer ein neuer Lauf ist)
+          - variables:
+              v_open_seconds_before_close: >-
+                {% if trigger.from_state is not none %}
+                  {{ (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) | int(0) }}
+                {% else %}
+                  0
+                {% endif %}
+              v_was_alarm: >-
+                {{ v_open_seconds_before_close >= (v_initial_delay | int(60)) }}
+
+          - if:
+              - condition: template
+                value_template: >-
+                  {{
+                    v_tts_enabled == true
+                    and (
+                      v_thank_you_mode == 'immer'
+                      or (v_thank_you_mode == 'nur_nach_alarm' and v_was_alarm == true)
+                    )
+                  }}
+            then:
+              - variables:
+                  v_in_tts_sleep: >-
+                    {% if v_tts_sleep_start != '00:00:00' and v_tts_sleep_end != '00:00:00' and v_tts_sleep_start != v_tts_sleep_end %}
+                      {% set now_t = now().strftime('%H:%M:%S') %}
+                      {% if v_tts_sleep_start <= v_tts_sleep_end %}
+                        {{ v_tts_sleep_start <= now_t < v_tts_sleep_end }}
+                      {% else %}
+                        {{ now_t >= v_tts_sleep_start or now_t < v_tts_sleep_end }}
+                      {% endif %}
+                    {% else %}
+                      false
+                    {% endif %}
+              - if:
+                  - condition: template
+                    value_template: "{{ v_in_tts_sleep == false }}"
+                then:
+                  - action: "{{ v_tts_service }}"
+                    data:
+                      entity_id: "{{ v_media_players }}"
+                      message: >-
+                        {{ v_msg_closed | replace('{trigger_name}', v_trig_name) }}
+                      language: >-
+                        {{ v_tts_language if v_tts_language != '' else omit }}
+                      cache: false
+
+          - choose: []
+            default: !input action_on_close
+
+          - stop: "✅ Tür geschlossen – Ende (Modus: immer)"
+
+      # ╔══════════════════════════════════════════════════════════════════════╗
+      # ║  PFAD B: Tür geöffnet                                                ║
+      # ╚══════════════════════════════════════════════════════════════════════╝
+      - conditions:
+          - condition: trigger
+            id: door_opened
+        sequence:
+
+          # ── 1. Deaktivierungs-Schalter prüfen ────────────────────────────
+          - if:
+              - condition: template
+                value_template: >-
+                  {{ v_disable_switch != '' and states(v_disable_switch) == 'on' }}
+            then:
+              - stop: "🔴 Automation durch Schalter deaktiviert"
+
+          # ── 2. Bypass-Entities prüfen ─────────────────────────────────────
+          - if:
+              - condition: template
+                value_template: >-
+                  {{ v_bypass_entities | select('is_state', 'on') | list | count > 0 }}
+            then:
+              - stop: "🛡️ Bypass aktiv – kein Alarm"
+
+          # ── 3. Wartezeit ──────────────────────────────────────────────────
+          - delay:
+              seconds: "{{ v_initial_delay | int(60) }}"
+
+          # ── 4. Tür noch offen? ────────────────────────────────────────────
+          - if:
+              - condition: template
+                value_template: "{{ states(v_triggered_door) == 'on' }}"
+            then:
+
+              # ── 4a. Schalter & Bypass erneut prüfen ───────────────────────
+              - if:
+                  - condition: template
+                    value_template: >-
+                      {{ (v_disable_switch != '' and states(v_disable_switch) == 'on')
+                         or (v_bypass_entities | select('is_state', 'on') | list | count > 0) }}
+                then:
+                  - stop: "🛡️ Schalter/Bypass nach Delay aktiv"
+
+              # ── 4b. Schlafzeit berechnen ──────────────────────────────────
+              - variables:
+                  v_in_tts_sleep_now: >-
+                    {% if v_tts_sleep_start != '00:00:00' and v_tts_sleep_end != '00:00:00' and v_tts_sleep_start != v_tts_sleep_end %}
+                      {% set now_t = now().strftime('%H:%M:%S') %}
+                      {% if v_tts_sleep_start <= v_tts_sleep_end %}
+                        {{ v_tts_sleep_start <= now_t < v_tts_sleep_end }}
+                      {% else %}
+                        {{ now_t >= v_tts_sleep_start or now_t < v_tts_sleep_end }}
+                      {% endif %}
+                    {% else %}
+                      false
+                    {% endif %}
+                  v_in_push_sleep_now: >-
+                    {% if v_push_sleep_start != '00:00:00' and v_push_sleep_end != '00:00:00' and v_push_sleep_start != v_push_sleep_end %}
+                      {% set now_t = now().strftime('%H:%M:%S') %}
+                      {% if v_push_sleep_start <= v_push_sleep_end %}
+                        {{ v_push_sleep_start <= now_t < v_push_sleep_end }}
+                      {% else %}
+                        {{ now_t >= v_push_sleep_start or now_t < v_push_sleep_end }}
+                      {% endif %}
+                    {% else %}
+                      false
+                    {% endif %}
+
+              # ── 4c. Chime abspielen ───────────────────────────────────────
+              - if:
+                  - condition: template
+                    value_template: >-
+                      {{ v_tts_enabled == true and v_chime_url != '' and v_in_tts_sleep_now == false }}
+                then:
+                  - action: media_player.play_media
+                    target:
+                      entity_id: "{{ v_media_players }}"
+                    data:
+                      media_content_id: "{{ v_chime_url }}"
+                      media_content_type: "{{ v_chime_type }}"
+                  - delay:
+                      seconds: "{{ v_chime_wait | int(2) }}"
+
+              # ── 4d. Erste TTS-Ansage (Tür offen) ─────────────────────────
+              - if:
+                  - condition: template
+                    value_template: "{{ v_tts_enabled == true and v_in_tts_sleep_now == false }}"
+                then:
+                  - action: "{{ v_tts_service }}"
+                    data:
+                      entity_id: "{{ v_media_players }}"
+                      message: >-
+                        {{ v_msg_first | replace('{trigger_name}', v_trig_name) }}
+                      language: >-
+                        {{ v_tts_language if v_tts_language != '' else omit }}
+                      cache: false
+
+              # ── 4e. Erste Push-Benachrichtigung (Tür offen) ───────────────
+              - if:
+                  - condition: template
+                    value_template: >-
+                      {{ v_notify_enabled == true and v_notify_services != '' and v_in_push_sleep_now == false }}
+                then:
+                  - repeat:
+                      for_each: "{{ v_notify_services.split(',') | map('trim') | list }}"
+                      sequence:
+                        - action: "{{ repeat.item }}"
+                          data:
+                            title: >-
+                              {{ v_notify_title
+                                 | replace('{trigger_name}', v_trig_name)
+                                 | replace('{open_minutes}', '0') }}
+                            message: >-
+                              {{ v_notify_message
+                                 | replace('{trigger_name}', v_trig_name)
+                                 | replace('{open_minutes}', '0') }}
+                            data:
+                              push:
+                                interruption-level: "{{ v_notify_level }}"
+
+              # ── 4f. Custom Action (Tür auf) ───────────────────────────────
+              - choose: []
+                default: !input action_on_open
+
+              # ── 4g. Batterie-Check NACH Tür-Ansage ───────────────────────
+              - if:
+                  - condition: template
+                    value_template: >-
+                      {{ v_battery_warn_enabled == true and v_battery_sensors | list | count > 0 }}
+                then:
+                  - delay:
+                      seconds: 4
+
+                  - repeat:
+                      for_each: "{{ v_battery_sensors if v_battery_sensors is list else [v_battery_sensors] }}"
+                      sequence:
+                        - variables:
+                            batt_entity: "{{ repeat.item }}"
+                            batt_name: "{{ state_attr(repeat.item, 'friendly_name') | default(repeat.item) }}"
+                            v_batt_triggered: >-
+                              {% if states(batt_entity) not in ['unavailable', 'unknown', ''] %}
+                                {% if batt_entity.startswith('binary_sensor.') %}
+                                  {{ states(batt_entity) == 'on' }}
+                                {% else %}
+                                  {{ states(batt_entity) | int(100) < v_battery_threshold | int(20) }}
+                                {% endif %}
+                              {% else %}
+                                false
+                              {% endif %}
+                            v_batt_level: >-
+                              {% if states(batt_entity) not in ['unavailable', 'unknown', ''] %}
+                                {% if batt_entity.startswith('binary_sensor.') %}
+                                  leer (LOWBAT)
+                                {% else %}
+                                  {{ states(batt_entity) | int(0) }}%
+                                {% endif %}
+                              {% else %}
+                                unbekannt
+                              {% endif %}
+
+                        - if:
+                            - condition: template
+                              value_template: "{{ v_batt_triggered == true }}"
+                          then:
+
+                            # Batterie-Push
+                            - if:
+                                - condition: template
+                                  value_template: >-
+                                    {{ v_battery_notify_push == true and v_notify_enabled == true and v_notify_services != '' }}
+                              then:
+                                - repeat:
+                                    for_each: "{{ v_notify_services.split(',') | map('trim') | list }}"
+                                    sequence:
+                                      - action: "{{ repeat.item }}"
+                                        data:
+                                          title: >-
+                                            {{ v_battery_notify_title
+                                               | replace('{trigger_name}', batt_name)
+                                               | replace('{battery_level}', v_batt_level | string) }}
+                                          message: >-
+                                            {{ v_battery_notify_message
+                                               | replace('{trigger_name}', batt_name)
+                                               | replace('{battery_level}', v_batt_level | string) }}
+                                          data:
+                                            push:
+                                              interruption-level: "{{ v_battery_interruption_level }}"
+
+                            # Batterie-TTS
+                            - if:
+                                - condition: template
+                                  value_template: "{{ v_battery_notify_tts == true and v_tts_enabled == true }}"
+                              then:
+                                - action: "{{ v_tts_service }}"
+                                  data:
+                                    entity_id: "{{ v_media_players }}"
+                                    message: >-
+                                      {{ v_battery_tts_message
+                                         | replace('{trigger_name}', batt_name)
+                                         | replace('{battery_level}', v_batt_level | string) }}
+                                    language: >-
+                                      {{ v_tts_language if v_tts_language != '' else omit }}
+                                    cache: false
+
+                            # Pause zwischen mehreren Batterie-Entities (falls TTS aktiv)
+                            - if:
+                                - condition: template
+                                  value_template: "{{ v_battery_notify_tts == true and v_tts_enabled == true }}"
+                              then:
+                                - delay:
+                                    seconds: 4
+
+              # ── 4h. Wiederholungsschleife ─────────────────────────────────
+              - if:
+                  - condition: template
+                    value_template: "{{ v_repeat_enabled == true }}"
+                then:
+                  - repeat:
+                      while:
+                        - condition: template
+                          value_template: "{{ states(v_triggered_door) == 'on' }}"
+                      sequence:
+                        - delay:
+                            seconds: "{{ v_repeat_interval | int(60) }}"
+
+                        - if:
+                            - condition: template
+                              value_template: "{{ states(v_triggered_door) == 'on' }}"
+                          then:
+                            # Schalter/Bypass in Schleife
+                            - if:
+                                - condition: template
+                                  value_template: >-
+                                    {{ (v_disable_switch != '' and states(v_disable_switch) == 'on')
+                                       or (v_bypass_entities | select('is_state', 'on') | list | count > 0) }}
+                              then:
+                                - stop: "🛡️ Schalter/Bypass in Wiederholungsschleife"
+
+                            - variables:
+                                open_min: >-
+                                  {{ ((now().timestamp() - as_timestamp(states[v_triggered_door].last_changed)) / 60) | int }}
+                                v_in_tts_sleep_loop: >-
+                                  {% if v_tts_sleep_start != '00:00:00' and v_tts_sleep_end != '00:00:00' and v_tts_sleep_start != v_tts_sleep_end %}
+                                    {% set now_t = now().strftime('%H:%M:%S') %}
+                                    {% if v_tts_sleep_start <= v_tts_sleep_end %}
+                                      {{ v_tts_sleep_start <= now_t < v_tts_sleep_end }}
+                                    {% else %}
+                                      {{ now_t >= v_tts_sleep_start or now_t < v_tts_sleep_end }}
+                                    {% endif %}
+                                  {% else %}
+                                    false
+                                  {% endif %}
+                                v_in_push_sleep_loop: >-
+                                  {% if v_push_sleep_start != '00:00:00' and v_push_sleep_end != '00:00:00' and v_push_sleep_start != v_push_sleep_end %}
+                                    {% set now_t = now().strftime('%H:%M:%S') %}
+                                    {% if v_push_sleep_start <= v_push_sleep_end %}
+                                      {{ v_push_sleep_start <= now_t < v_push_sleep_end }}
+                                    {% else %}
+                                      {{ now_t >= v_push_sleep_start or now_t < v_push_sleep_end }}
+                                    {% endif %}
+                                  {% else %}
+                                    false
+                                  {% endif %}
+
+                            # Wiederholungs-TTS
+                            - if:
+                                - condition: template
+                                  value_template: "{{ v_tts_enabled == true and v_in_tts_sleep_loop == false }}"
+                              then:
+                                - action: "{{ v_tts_service }}"
+                                  data:
+                                    entity_id: "{{ v_media_players }}"
+                                    message: >-
+                                      {{ v_msg_repeat
+                                         | replace('{trigger_name}', v_trig_name)
+                                         | replace('{open_minutes}', open_min | string) }}
+                                    language: >-
+                                      {{ v_tts_language if v_tts_language != '' else omit }}
+                                    cache: false
+
+                            # Wiederholungs-Push
+                            - if:
+                                - condition: template
+                                  value_template: >-
+                                    {{ v_notify_enabled == true and v_notify_services != '' and v_in_push_sleep_loop == false }}
+                              then:
+                                - repeat:
+                                    for_each: "{{ v_notify_services.split(',') | map('trim') | list }}"
+                                    sequence:
+                                      - action: "{{ repeat.item }}"
+                                        data:
+                                          title: >-
+                                            {{ v_notify_title
+                                               | replace('{trigger_name}', v_trig_name)
+                                               | replace('{open_minutes}', open_min | string) }}
+                                          message: >-
+                                            {{ v_notify_message
+                                               | replace('{trigger_name}', v_trig_name)
+                                               | replace('{open_minutes}', open_min | string) }}
+                                          data:
+                                            push:
+                                              interruption-level: "{{ v_notify_level }}"

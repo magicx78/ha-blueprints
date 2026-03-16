@@ -1,0 +1,106 @@
+blueprint:
+  name: "🔍 Automation Log Viewer"
+  description: >
+    Liest den HA-Log gefiltert auf die gewählte Automation.
+    Gibt das Ergebnis als Persistent Notification und/oder
+    in einen input_text Helper aus.
+    Voraussetzung: command_line Sensor und shell_command müssen
+    in configuration.yaml eingerichtet sein.
+  domain: automation
+  author: "magicx78"
+  homeassistant:
+    min_version: "2024.6.0"
+
+  input:
+    automation_select:
+      name: "📌 Dropdown Helfer"
+      description: "Der input_select mit den Automation-Namen."
+      selector:
+        entity:
+          domain: input_select
+
+    log_level:
+      name: "📊 Log-Level Filter"
+      description: "Welche Log-Einträge sollen angezeigt werden?"
+      default: "WARNING|ERROR"
+      selector:
+        select:
+          options:
+            - label: "Nur Fehler (ERROR)"
+              value: "ERROR"
+            - label: "Fehler & Warnungen (WARNING + ERROR)"
+              value: "WARNING|ERROR"
+            - label: "Fehler, Warnungen & Info (INFO + WARNING + ERROR)"
+              value: "INFO|WARNING|ERROR"
+            - label: "Alle Einträge (DEBUG + INFO + WARNING + ERROR)"
+              value: "DEBUG|INFO|WARNING|ERROR"
+
+    show_notification:
+      name: "🔔 Persistent Notification anzeigen"
+      description: "Log als Persistent Notification im HA-Frontend anzeigen."
+      default: true
+      selector:
+        boolean:
+
+    write_to_helper:
+      name: "📋 In Text-Helfer schreiben"
+      description: "Log in einen input_text Helper schreiben (max. 255 Zeichen)."
+      default: true
+      selector:
+        boolean:
+
+    log_helper:
+      name: "📝 Text Helfer (input_text)"
+      description: "Nur nötig wenn 'In Text-Helfer schreiben' aktiv ist."
+      default: ""
+      selector:
+        entity:
+          domain: input_text
+
+variables:
+  automation_select: !input automation_select
+  log_level_var: !input log_level
+  show_notification: !input show_notification
+  write_to_helper: !input write_to_helper
+  log_helper: !input log_helper
+
+trigger:
+  - platform: state
+    entity_id: !input automation_select
+
+action:
+  - action: shell_command.log_viewer_write_term
+
+  - delay: "00:00:02"
+
+  - action: homeassistant.update_entity
+    target:
+      entity_id: sensor.automation_log_reader
+
+  - delay: "00:00:03"
+
+  - if:
+      - condition: template
+        value_template: "{{ show_notification }}"
+    then:
+      - action: persistent_notification.create
+        data:
+          title: "🔍 Log: {{ states(automation_select) }}"
+          message: |
+            ⏱ {{ now().strftime('%d.%m.%Y %H:%M:%S') }}
+            🔎 Filter: {{ log_level_var }}
+
+            {{ states('sensor.automation_log_reader') }}
+          notification_id: "automation_log_viewer"
+
+  - if:
+      - condition: template
+        value_template: "{{ write_to_helper and log_helper != '' }}"
+    then:
+      - action: input_text.set_value
+        target:
+          entity_id: "{{ log_helper }}"
+        data:
+          value: "{{ states('sensor.automation_log_reader')[:255] }}"
+
+mode: single
