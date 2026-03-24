@@ -1,10 +1,10 @@
 # ═══════════════════════════════════════════════════════════════════════════
-#  GrowWarn Blueprint  –  v1.0  (HA 2024.6.0+)
+#  GrowWarn Blueprint  –  v1.4  (HA 2024.1.0+)
 #  Datei ablegen unter:  config/blueprints/automation/growwarn/growwarn.yaml
 #  Danach: Einstellungen → Automationen → Blueprint importieren → GrowWarn
 # ═══════════════════════════════════════════════════════════════════════════
 #  VORAUSSETZUNGEN
-#   - HA 2024.6.0 oder neuer
+#   - HA 2024.1.0 oder neuer
 #   - Mindestens eine TTS-Integration (Piper / Google / Nabu Casa) – optional
 #   - HA Companion App für Push-Notify (iOS) – optional
 #   - Helpers MÜSSEN VOR der ersten Automation-Ausführung angelegt werden!
@@ -43,10 +43,16 @@ blueprint:
     ── HINWEIS: Helpers anlegen ──
     Bevor diese Automation aktiv genutzt wird, müssen die input_text-Helpers
     manuell angelegt werden (siehe Kommentar oben in der Blueprint-Datei).
+
+    ── v1.4 Fix ──
+    Kritischer Bugfix: binary_sensor-Trigger feuerte ohne enabled-Guard
+    bei leerem Sensor auf ALLE state_changed-Events (OOM-Kill bei Sensoren
+    mit 2–3 Sek Update-Intervall). Jetzt sicher durch
+    enabled: !input binary_sensor_enabled.
   domain: automation
   author: "magicx78"
   homeassistant:
-    min_version: "2024.6.0"
+    min_version: "2024.1.0"
   input:
 
     # ── GH 1 ────────────────────────────────────────────────────────────────
@@ -462,8 +468,10 @@ trigger:
     id: "ack_action"
 
   # Binärsensor – Zustandsänderung
+  # enabled: false (default) → Trigger schläft vollständig, kein Trigger-Storm
   - platform: state
     entity_id: !input binary_sensor
+    enabled: !input binary_sensor_enabled
     id: "binary_change"
 
 # ═══════════════════════════════════════════════════════════════════════════

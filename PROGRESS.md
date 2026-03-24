@@ -14,7 +14,7 @@ validieren und auf GitHub veröffentlichen.
 | Presence & Light v2 | blueprints/automation/presence_light.yaml | automation | valide | author + min_version 2024.6.0 + Beschreibung nachgetragen |
 | Tuer offen Alarm Pro v4 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | author nachgetragen; min_version 2024.10.0 war bereits vorhanden |
 | Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
-| GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
+| GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
 
 **Status-Legende:**
 - in Entwicklung
@@ -39,6 +39,7 @@ Developer-Korrekturen durchgefuehrt:
 - tuer_alarm_pro.yaml:  author ergaenzt
 - log_viewer.yaml:      author + homeassistant.min_version ergaenzt
 - growwarn.yaml:        author + homeassistant.min_version ergaenzt
+- growwarn.yaml (v1.4): binary_sensor Trigger-Storm Fix — enabled-Guard ergaenzt
 
 ---
 
@@ -100,4 +101,5 @@ Publisher-Schritt abgeschlossen (2026-03-16):
 ## Release-Status
 
 - [x] v1.0.0 — lokales Repo bereit, initialer Commit erstellt
-- [ ] v1.0.0 — GitHub Push + Release ausstehend (manueller Schritt)
+- [x] v1.0.0 — GitHub Push erfolgt
+- [ ] v1.1.0 — growwarn v1.4 Fix — GitHub Push + Release ausstehend
