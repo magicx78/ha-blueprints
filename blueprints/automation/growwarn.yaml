@@ -1,10 +1,10 @@
 # ═══════════════════════════════════════════════════════════════════════════
-#  GrowWarn Blueprint  –  v1.4  (HA 2024.1.0+)
+#  GrowWarn Blueprint  –  v1.5  (HA 2024.8.0+)
 #  Datei ablegen unter:  config/blueprints/automation/growwarn/growwarn.yaml
 #  Danach: Einstellungen → Automationen → Blueprint importieren → GrowWarn
 # ═══════════════════════════════════════════════════════════════════════════
 #  VORAUSSETZUNGEN
-#   - HA 2024.1.0 oder neuer
+#   - HA 2024.8.0 oder neuer
 #   - Mindestens eine TTS-Integration (Piper / Google / Nabu Casa) – optional
 #   - HA Companion App für Push-Notify (iOS) – optional
 #   - Helpers MÜSSEN VOR der ersten Automation-Ausführung angelegt werden!
@@ -49,10 +49,16 @@ blueprint:
     bei leerem Sensor auf ALLE state_changed-Events (OOM-Kill bei Sensoren
     mit 2–3 Sek Update-Intervall). Jetzt sicher durch
     enabled: !input binary_sensor_enabled.
+
+    ── v1.5 Fix ──
+    Stale-Erkennung: last_changed → last_reported (Fallback last_updated).
+    TTS: tts.speak-Schema modernisiert (target.entity_id = TTS-Engine,
+    media_player_entity_id = Zielgerät). ACK-Variable abgesichert.
+    Kompatibel mit HA 2024.8+.
   domain: automation
   author: "magicx78"
   homeassistant:
-    min_version: "2024.1.0"
+    min_version: "2024.8.0"
   input:
 
     # ── GH 1 ────────────────────────────────────────────────────────────────
@@ -368,6 +374,17 @@ blueprint:
         entity:
           domain: media_player
 
+    tts_entity:
+      name: "TTS-Engine Entität (nur für tts.speak)"
+      description: >
+        Nur relevant wenn tts.speak genutzt wird. Entität der TTS-Engine,
+        z.B. 'tts.piper' oder 'tts.google_translate'. Leer lassen wenn
+        Legacy-Dienst (tts.*_say) verwendet wird.
+      default: ""
+      selector:
+        entity:
+          domain: tts
+
     tts_quiet_start:
       name: "Ruhezeit – Start (Uhrzeit)"
       description: "Ab dieser Uhrzeit keine TTS-Ansagen (nur Notify)"
@@ -516,6 +533,7 @@ variables:
   v_tts_en:         !input tts_enabled
   v_tts_service:    !input tts_service
   v_tts_target:     !input tts_target
+  v_tts_entity:     !input tts_entity
   v_quiet_start:    !input tts_quiet_start
   v_quiet_end:      !input tts_quiet_end
   v_thanks_en:      !input thanks_enabled
@@ -571,7 +589,11 @@ variables:
 
   # ── Aktueller ACK-Action-Payload ─────────────────────────────────────────
   v_ack_action: >
-    {{ trigger.event.data.action if trigger.id == 'ack_action' else '' }}
+    {%- if trigger.id == 'ack_action' and trigger.event is defined %}
+      {{ trigger.event.data.action | default('') }}
+    {%- else %}
+      {{ '' }}
+    {%- endif %}
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  BEDINGUNGEN
@@ -603,7 +625,9 @@ action:
             latch_gh1_temp: "{{ states('input_text.growwarn_gh1_temp') }}"
             val_gh1_temp:   "{{ states(v_gh1_temp) | float(none) }}"
             last_gh1_temp:  >
-              {{ (as_timestamp(states[v_gh1_temp].last_changed) | float(0))
+              {{ (as_timestamp(states[v_gh1_temp].last_reported
+                   if states[v_gh1_temp].last_reported is defined
+                   else states[v_gh1_temp].last_updated) | float(0))
                  if v_gh1_temp != '' else 0 }}
             out_gh1_temp: >
               {{ val_gh1_temp is not none
@@ -705,8 +729,12 @@ action:
                         for_each: !input tts_service
                         sequence:
                           - service: "{{ repeat.item }}"
+                            target:
+                              entity_id: >
+                                {{ v_tts_entity if (repeat.item == 'tts.speak' and v_tts_entity != '') else v_tts_target }}
                             data:
-                              entity_id: "{{ v_tts_target }}"
+                              media_player_entity_id: >
+                                {{ v_tts_target if (repeat.item == 'tts.speak' and v_tts_entity != '') else '' }}
                               message: >
                                 Achtung! {{ v_gh1_name }}: Temperatur
                                 {{ 'zu niedrig' if gh1_temp_low else 'zu hoch' }}:
@@ -758,8 +786,12 @@ action:
                         for_each: !input tts_service
                         sequence:
                           - service: "{{ repeat.item }}"
+                            target:
+                              entity_id: >
+                                {{ v_tts_entity if (repeat.item == 'tts.speak' and v_tts_entity != '') else v_tts_target }}
                             data:
-                              entity_id: "{{ v_tts_target }}"
+                              media_player_entity_id: >
+                                {{ v_tts_target if (repeat.item == 'tts.speak' and v_tts_entity != '') else '' }}
                               message: >
                                 Erinnerung: {{ v_gh1_name }}: Temperatur
                                 {{ 'immer noch zu niedrig' if gh1_temp_low else 'immer noch zu hoch' }}.
@@ -898,8 +930,12 @@ action:
                         for_each: !input tts_service
                         sequence:
                           - service: "{{ repeat.item }}"
+                            target:
+                              entity_id: >
+                                {{ v_tts_entity if (repeat.item == 'tts.speak' and v_tts_entity != '') else v_tts_target }}
                             data:
-                              entity_id: "{{ v_tts_target }}"
+                              media_player_entity_id: >
+                                {{ v_tts_target if (repeat.item == 'tts.speak' and v_tts_entity != '') else '' }}
                               message: >
                                 Achtung! {{ v_gh1_name }}: Luftfeuchte
                                 {{ 'zu niedrig' if gh1_hum_low else 'zu hoch' }}:
@@ -946,8 +982,12 @@ action:
                         for_each: !input tts_service
                         sequence:
                           - service: "{{ repeat.item }}"
+                            target:
+                              entity_id: >
+                                {{ v_tts_entity if (repeat.item == 'tts.speak' and v_tts_entity != '') else v_tts_target }}
                             data:
-                              entity_id: "{{ v_tts_target }}"
+                              media_player_entity_id: >
+                                {{ v_tts_target if (repeat.item == 'tts.speak' and v_tts_entity != '') else '' }}
                               message: >
                                 Erinnerung: {{ v_gh1_name }}: Luftfeuchte
                                 {{ 'immer noch zu niedrig' if gh1_hum_low else 'immer noch zu hoch' }}.
@@ -998,7 +1038,9 @@ action:
                 latch_gh1_ts: "{{ states('input_text.growwarn_gh1_temp_stale') }}"
                 age_gh1_temp: >
                   {{ (as_timestamp(now())
-                      - as_timestamp(states[v_gh1_temp].last_changed) | float(0))
+                      - as_timestamp(states[v_gh1_temp].last_reported
+                        if states[v_gh1_temp].last_reported is defined
+                        else states[v_gh1_temp].last_updated) | float(0))
                      if v_gh1_temp != '' and states[v_gh1_temp] is defined else 9999 }}
                 gh1_ts_state: >
                   {% set raw = latch_gh1_ts %}
@@ -1066,7 +1108,9 @@ action:
                 latch_gh1_hs: "{{ states('input_text.growwarn_gh1_hum_stale') }}"
                 age_gh1_hum_s: >
                   {{ (as_timestamp(now())
-                      - as_timestamp(states[v_gh1_hum].last_changed) | float(0))
+                      - as_timestamp(states[v_gh1_hum].last_reported
+                        if states[v_gh1_hum].last_reported is defined
+                        else states[v_gh1_hum].last_updated) | float(0))
                      if v_gh1_hum != '' and states[v_gh1_hum] is defined else 9999 }}
                 gh1_hs_state: >
                   {% if latch_gh1_hs == 'stale_warned' %}stale_warned{% else %}idle{% endif %}
@@ -1214,8 +1258,12 @@ action:
                             for_each: !input tts_service
                             sequence:
                               - service: "{{ repeat.item }}"
+                                target:
+                                  entity_id: >
+                                    {{ v_tts_entity if (repeat.item == 'tts.speak' and v_tts_entity != '') else v_tts_target }}
                                 data:
-                                  entity_id: "{{ v_tts_target }}"
+                                  media_player_entity_id: >
+                                    {{ v_tts_target if (repeat.item == 'tts.speak' and v_tts_entity != '') else '' }}
                                   message: >
                                     Achtung! {{ v_gh2_name }}: Temperatur
                                     {{ 'zu niedrig' if gh2_temp_low else 'zu hoch' }}:
@@ -1383,8 +1431,12 @@ action:
                             for_each: !input tts_service
                             sequence:
                               - service: "{{ repeat.item }}"
+                                target:
+                                  entity_id: >
+                                    {{ v_tts_entity if (repeat.item == 'tts.speak' and v_tts_entity != '') else v_tts_target }}
                                 data:
-                                  entity_id: "{{ v_tts_target }}"
+                                  media_player_entity_id: >
+                                    {{ v_tts_target if (repeat.item == 'tts.speak' and v_tts_entity != '') else '' }}
                                   message: >
                                     Achtung! {{ v_gh2_name }}: Luftfeuchte
                                     {{ 'zu niedrig' if gh2_hum_low else 'zu hoch' }}:
@@ -1470,7 +1522,9 @@ action:
                 latch_gh2_ts: "{{ states('input_text.growwarn_gh2_temp_stale') }}"
                 age_gh2_temp: >
                   {{ (as_timestamp(now())
-                      - as_timestamp(states[v_gh2_temp].last_changed) | float(0))
+                      - as_timestamp(states[v_gh2_temp].last_reported
+                        if states[v_gh2_temp].last_reported is defined
+                        else states[v_gh2_temp].last_updated) | float(0))
                      if v_gh2_temp != '' and states[v_gh2_temp] is defined else 9999 }}
             - choose:
                 - conditions:
@@ -1519,7 +1573,9 @@ action:
                 latch_gh2_hs: "{{ states('input_text.growwarn_gh2_hum_stale') }}"
                 age_gh2_hum_s: >
                   {{ (as_timestamp(now())
-                      - as_timestamp(states[v_gh2_hum].last_changed) | float(0))
+                      - as_timestamp(states[v_gh2_hum].last_reported
+                        if states[v_gh2_hum].last_reported is defined
+                        else states[v_gh2_hum].last_updated) | float(0))
                      if v_gh2_hum != '' and states[v_gh2_hum] is defined else 9999 }}
             - choose:
                 - conditions:
@@ -1649,8 +1705,12 @@ action:
                             for_each: !input tts_service
                             sequence:
                               - service: "{{ repeat.item }}"
+                                target:
+                                  entity_id: >
+                                    {{ v_tts_entity if (repeat.item == 'tts.speak' and v_tts_entity != '') else v_tts_target }}
                                 data:
-                                  entity_id: "{{ v_tts_target }}"
+                                  media_player_entity_id: >
+                                    {{ v_tts_target if (repeat.item == 'tts.speak' and v_tts_entity != '') else '' }}
                                   message: >
                                     Achtung! {{ v_gh3_name }}: Temperatur
                                     {{ 'zu niedrig' if gh3_temp_low else 'zu hoch' }}:
@@ -1815,8 +1875,12 @@ action:
                             for_each: !input tts_service
                             sequence:
                               - service: "{{ repeat.item }}"
+                                target:
+                                  entity_id: >
+                                    {{ v_tts_entity if (repeat.item == 'tts.speak' and v_tts_entity != '') else v_tts_target }}
                                 data:
-                                  entity_id: "{{ v_tts_target }}"
+                                  media_player_entity_id: >
+                                    {{ v_tts_target if (repeat.item == 'tts.speak' and v_tts_entity != '') else '' }}
                                   message: >
                                     Achtung! {{ v_gh3_name }}: Luftfeuchte
                                     {{ 'zu niedrig' if gh3_hum_low else 'zu hoch' }}:
@@ -1899,7 +1963,9 @@ action:
                 latch_gh3_ts: "{{ states('input_text.growwarn_gh3_temp_stale') }}"
                 age_gh3_temp: >
                   {{ (as_timestamp(now())
-                      - as_timestamp(states[v_gh3_temp].last_changed) | float(0))
+                      - as_timestamp(states[v_gh3_temp].last_reported
+                        if states[v_gh3_temp].last_reported is defined
+                        else states[v_gh3_temp].last_updated) | float(0))
                      if v_gh3_temp != '' and states[v_gh3_temp] is defined else 9999 }}
             - choose:
                 - conditions:
@@ -1942,7 +2008,9 @@ action:
                 latch_gh3_hs: "{{ states('input_text.growwarn_gh3_hum_stale') }}"
                 age_gh3_hum_s: >
                   {{ (as_timestamp(now())
-                      - as_timestamp(states[v_gh3_hum].last_changed) | float(0))
+                      - as_timestamp(states[v_gh3_hum].last_reported
+                        if states[v_gh3_hum].last_reported is defined
+                        else states[v_gh3_hum].last_updated) | float(0))
                      if v_gh3_hum != '' and states[v_gh3_hum] is defined else 9999 }}
             - choose:
                 - conditions:
@@ -2177,8 +2245,12 @@ action:
                         for_each: !input tts_service
                         sequence:
                           - service: "{{ repeat.item }}"
+                            target:
+                              entity_id: >
+                                {{ v_tts_entity if (repeat.item == 'tts.speak' and v_tts_entity != '') else v_tts_target }}
                             data:
-                              entity_id: "{{ v_tts_target }}"
+                              media_player_entity_id: >
+                                {{ v_tts_target if (repeat.item == 'tts.speak' and v_tts_entity != '') else '' }}
                               message: "{{ v_bin_name }} wurde geöffnet."
                 # Custom Aktion bei Öffnen
                 - choose:
@@ -2227,8 +2299,12 @@ action:
                         for_each: !input tts_service
                         sequence:
                           - service: "{{ repeat.item }}"
+                            target:
+                              entity_id: >
+                                {{ v_tts_entity if (repeat.item == 'tts.speak' and v_tts_entity != '') else v_tts_target }}
                             data:
-                              entity_id: "{{ v_tts_target }}"
+                              media_player_entity_id: >
+                                {{ v_tts_target if (repeat.item == 'tts.speak' and v_tts_entity != '') else '' }}
                               message: "{{ v_bin_name }} wurde geschlossen."
                 # Custom Aktion bei Schließen
                 - choose:
@@ -2301,8 +2377,12 @@ action:
                       for_each: !input tts_service
                       sequence:
                         - service: "{{ repeat.item }}"
+                          target:
+                            entity_id: >
+                              {{ v_tts_entity if (repeat.item == 'tts.speak' and v_tts_entity != '') else v_tts_target }}
                           data:
-                            entity_id: "{{ v_tts_target }}"
+                            media_player_entity_id: >
+                              {{ v_tts_target if (repeat.item == 'tts.speak' and v_tts_entity != '') else '' }}
                             message: >
                               Achtung! {{ v_bin_name }} ist seit
                               {{ v_bin_timer_min }} Minuten noch geöffnet!
