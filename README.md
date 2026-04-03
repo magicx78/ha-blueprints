@@ -24,7 +24,7 @@ Meldet Kamera- und Stream-Ausfälle über drei unabhängige Signale: die Kamera-
 
 ### Presence & Light v2 – Motion/Presence + Türkontakt + Timer + Dämmerung + Schalter
 
-Anwesenheits- und bewegungsbasierte Lichtsteuerung. Unterstützt Bewegungsmelder, Präsenz-Sensoren, Türkontakte, Timer-Helfer, Dämmerungsprüfung (Lux und/oder Sonnenstand) sowie einen Sperr-Schalter. Das Licht schaltet sich bei Aktivität ein und nach Ablauf des Timers automatisch aus.
+Anwesenheits- und bewegungsbasierte Lichtsteuerung. Unterstützt Bewegungsmelder, Präsenz-Sensoren, Türkontakte, Timer-Helfer, Dämmerungsprüfung (Lux und/oder Sonnenstand) sowie einen Sperr-Schalter. Das Licht schaltet sich bei Aktivität ein und nach Ablauf des Timers automatisch aus. Hinweis: Fehlt der Lux-Sensor oder liefert er unknown/unavailable, gilt dies als „dunkel“, damit die Automation weiter funktioniert.
 
 **Features:**
 - Bewegungsmelder und Präsenz-Sensoren kombinierbar
@@ -130,3 +130,4 @@ Bei Blueprints mit Voraussetzungen (Log Viewer, GrowWarn) zuerst die beschrieben
 ## Lizenz
 
 MIT
+
