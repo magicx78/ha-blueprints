@@ -4,6 +4,8 @@ blueprint:
     Anwesenheits- und bewegungsbasierte Lichtsteuerung (Version 2).
     Unterstuetzt Bewegungsmelder, Praesenz-Sensoren, Tuerkontakte, Timer-Helfer,
     Daemmerungspruefung (Lux und/oder Sonne) sowie einen Sperr-Schalter.
+    Hinweis: Wenn kein Lux-Sensor gesetzt ist oder der Wert unknown/unavailable ist,
+    gilt dies als "dunkel", damit die Automation weiterhin funktioniert.
     Das Licht wird bei Aktivitaet eingeschaltet und nach Ablauf des Timers
     automatisch ausgeschaltet. Helligkeit und Uebergangszeiten sind konfigurierbar.
   domain: automation
@@ -183,6 +185,21 @@ variables:
   v_on_tr: !input on_transition
   v_off_tr: !input off_transition
 
+  v_lux_value: >-
+    {% if v_lux_sensor in [none, '', ' '] %}
+      {{ none }}
+    {% else %}
+      {{ states(v_lux_sensor) | float(none) }}
+    {% endif %}
+
+  v_lux_valid: >-
+    {{ v_lux_value is not none }}
+
+  # Falls der Lux-Sensor fehlt oder "unknown/unavailable" ist,
+  # behandeln wir es als "dunkel", damit die Automation nicht stumm bleibt.
+  v_lux_is_dark: >-
+    {{ (v_lux_value is not none and v_lux_value < (v_lux_th | float)) or (v_lux_value is none) }}
+
   v_motion_on: >-
     {% set ms = expand(v_motion) if v_motion != [] else [] %}
     {{ ms | selectattr('state', 'eq', 'on') | list | count > 0 }}
@@ -223,9 +240,9 @@ variables:
     {% elif v_dark_mode == 'sun' %}
       {{ is_state('sun.sun', 'below_horizon') }}
     {% elif v_dark_mode == 'lux' %}
-      {{ (states(v_lux_sensor) | float(999999)) < (v_lux_th | float) }}
+      {{ v_lux_is_dark }}
     {% else %}
-      {{ is_state('sun.sun', 'below_horizon') or (states(v_lux_sensor) | float(999999)) < (v_lux_th | float) }}
+      {{ is_state('sun.sun', 'below_horizon') or v_lux_is_dark }}
     {% endif %}
 
   v_any_light_on: >-
