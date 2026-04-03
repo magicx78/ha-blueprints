@@ -24,6 +24,16 @@ validieren und auf GitHub veröffentlichen.
 
 ---
 
+## Aktueller Stand — 2026-04-03
+
+Presence & Light v2:
+- Lux-/Dunkelheitspruefung robuster gemacht: fehlt der Lux-Sensor oder liefert er
+  unknown/unavailable, wird dies als "dunkel" behandelt, damit die Automation
+  weiter funktioniert.
+- Beschreibung im Blueprint entsprechend ergaenzt.
+
+---
+
 ## Aktueller Stand — 2026-03-16
 
 Alle 5 Blueprints wurden in die korrekte Verzeichnisstruktur verschoben
@@ -66,6 +76,14 @@ Developer-Korrekturen durchgefuehrt:
 
 ---
 
+## Letzte Session — 2026-04-03
+
+Presence & Light v2:
+- Lux-Fallback (unknown/unavailable/fehlender Sensor => dunkel) umgesetzt
+- Beschreibung im Blueprint ergaenzt
+
+---
+
 ## Letzte Session — 2026-03-16
 
 Blueprints stabilisiert und in korrekte Struktur gebracht.
@@ -86,6 +104,8 @@ Publisher-Schritt abgeschlossen (2026-03-16):
 - min_version: Für tuer_alarm_pro 2024.10.0 (sections-Feature), alle anderen 2024.6.0
 - presence_light.yaml: Urspruengliche Beschreibung war nur "VERSION 2" —
   wurde durch aussagekraeftige Beschreibung ersetzt (kein Inhalt geaendert)
+- presence_light.yaml: Lux-Sensor optional; unknown/unavailable oder fehlender Sensor
+  gilt als "dunkel", damit die Automation nicht blockiert
 
 ---
 
