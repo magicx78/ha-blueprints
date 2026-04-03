@@ -123,3 +123,4 @@ Publisher-Schritt abgeschlossen (2026-03-16):
 - [x] v1.0.0 — lokales Repo bereit, initialer Commit erstellt
 - [x] v1.0.0 — GitHub Push erfolgt
 - [ ] v1.1.0 — growwarn v1.4 Fix — GitHub Push + Release ausstehend
+- [ ] v1.1.0 — presence_light: Lux-Fallback (unknown/unavailable/fehlend => dunkel) + README/PROGRESS Hinweis
