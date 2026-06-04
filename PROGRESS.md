@@ -15,12 +15,28 @@ validieren und auf GitHub veröffentlichen.
 | Tuer offen Alarm Pro v4 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | author nachgetragen; min_version 2024.10.0 war bereits vorhanden |
 | Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
 | GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
+| Bluepoint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | neu; author + min_version 2024.10.0 (triggers/actions-Syntax) + Input-Beschreibungen ergänzt |
 
 **Status-Legende:**
 - in Entwicklung
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-06-04
+
+Neues Blueprint "Bluepoint mmWave Licht mit Lux, Anwesenheit, Timer und Bypass"
+hinzugefuegt (blueprints/automation/mmwave_light.yaml):
+- mmWave-Trigger (on/off) + Sofort-An-Helfer-Trigger (on/off)
+- Einschalten nur bei Anwesenheit (home/on/present/detected), Bypass aus,
+  und Lux <= Schwellwert (bei Sofort-An wird Lux ignoriert)
+- Ausschalten nach off_delay, wenn weiterhin keine Praesenz und Sofort-An aus
+- Sofort-An aus -> Licht aus, sofern mmWave aus
+- Pflichtfelder ergaenzt: author "magicx78", homeassistant.min_version 2024.10.0
+  (neue triggers:/actions:-Syntax), Beschreibungen je Input
+- README + PROGRESS aktualisiert; YAML- und Schema-Check bestanden
 
 ---
 

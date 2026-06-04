@@ -1,0 +1,150 @@
+blueprint:
+  name: Bluepoint mmWave Licht mit Lux, Anwesenheit, Timer und Bypass
+  description: >
+    Lichtsteuerung mit mmWave-Praesenzsensor, Luxwert, Anwesenheit,
+    Ausschalt-Timer, Bypass und Sofort-An ohne Timer.
+    Das Licht schaltet nur ein, wenn jemand anwesend ist und es dunkel genug
+    ist (Lux <= Schwellwert). Ueber den Sofort-An-Helfer kann das Licht
+    unabhaengig von Lux eingeschaltet und vom automatischen Ausschalten
+    ausgenommen werden. Ein Bypass-Helfer deaktiviert die Automation komplett.
+  domain: automation
+  author: "magicx78"
+  homeassistant:
+    min_version: "2024.10.0"
+
+  input:
+    mmwave_sensor:
+      name: mmWave Präsenzsensor
+      description: Binary Sensor des mmWave-/Präsenzmelders.
+      selector:
+        entity:
+          domain: binary_sensor
+
+    lux_sensor:
+      name: Luxsensor
+      description: Helligkeitssensor zur Dämmerungsprüfung.
+      selector:
+        entity:
+          domain: sensor
+
+    light_target:
+      name: Licht / Schalter
+      description: Ziel-Licht(er) oder Schalter, die geschaltet werden.
+      selector:
+        target:
+          entity:
+            domain:
+              - light
+              - switch
+
+    presence_entity:
+      name: Anwesenheit Person / Gruppe / Helper
+      description: Muss home/on/present sein, sonst geht kein Licht an.
+      selector:
+        entity:
+
+    lux_threshold:
+      name: Dämmerungswert
+      description: Licht schaltet nur ein, wenn Lux kleiner/gleich diesem Wert ist.
+      default: 30
+      selector:
+        number:
+          min: 0
+          max: 1000
+          step: 1
+          unit_of_measurement: lx
+
+    off_delay:
+      name: Ausschaltzeit nach keiner Präsenz
+      description: Verzögerung, nach der das Licht bei fehlender Präsenz ausgeht.
+      default:
+        minutes: 2
+      selector:
+        duration:
+
+    bypass_helper:
+      name: Bypass Helper
+      description: Wenn EIN, macht die Automation nichts.
+      selector:
+        entity:
+          domain: input_boolean
+
+    instant_on_helper:
+      name: Sofort-An ohne Timer Helper
+      description: Wenn EIN, wird Licht sofort eingeschaltet und nicht automatisch ausgeschaltet.
+      selector:
+        entity:
+          domain: input_boolean
+
+mode: restart
+
+variables:
+  mmwave_sensor: !input mmwave_sensor
+  lux_sensor: !input lux_sensor
+  presence_entity: !input presence_entity
+  bypass_helper: !input bypass_helper
+  instant_on_helper: !input instant_on_helper
+  lux_threshold: !input lux_threshold
+
+triggers:
+  - trigger: state
+    entity_id: !input mmwave_sensor
+    to: "on"
+    id: motion_on
+
+  - trigger: state
+    entity_id: !input mmwave_sensor
+    to: "off"
+    id: motion_off
+
+  - trigger: state
+    entity_id: !input instant_on_helper
+    to: "on"
+    id: instant_on
+
+  - trigger: state
+    entity_id: !input instant_on_helper
+    to: "off"
+    id: instant_off
+
+actions:
+  - choose:
+      - conditions:
+          - condition: trigger
+            id:
+              - motion_on
+              - instant_on
+          - condition: template
+            value_template: "{{ is_state(bypass_helper, 'off') }}"
+          - condition: template
+            value_template: >
+              {{ states(presence_entity) in ['home', 'on', 'present', 'detected'] }}
+          - condition: template
+            value_template: >
+              {{ trigger.id == 'instant_on' or states(lux_sensor) | float(9999) <= lux_threshold | float }}
+        sequence:
+          - action: homeassistant.turn_on
+            target: !input light_target
+
+      - conditions:
+          - condition: trigger
+            id: motion_off
+          - condition: template
+            value_template: "{{ is_state(instant_on_helper, 'off') }}"
+        sequence:
+          - delay: !input off_delay
+          - condition: template
+            value_template: "{{ is_state(mmwave_sensor, 'off') }}"
+          - condition: template
+            value_template: "{{ is_state(instant_on_helper, 'off') }}"
+          - action: homeassistant.turn_off
+            target: !input light_target
+
+      - conditions:
+          - condition: trigger
+            id: instant_off
+          - condition: template
+            value_template: "{{ is_state(mmwave_sensor, 'off') }}"
+        sequence:
+          - action: homeassistant.turn_off
+            target: !input light_target
