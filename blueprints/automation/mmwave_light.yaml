@@ -107,6 +107,10 @@ triggers:
     to: "off"
     id: instant_off
 
+conditions:
+  - condition: template
+    value_template: "{{ is_state(bypass_helper, 'off') }}"
+
 actions:
   - choose:
       - conditions:
@@ -115,10 +119,8 @@ actions:
               - motion_on
               - instant_on
           - condition: template
-            value_template: "{{ is_state(bypass_helper, 'off') }}"
-          - condition: template
             value_template: >
-              {{ states(presence_entity) in ['home', 'on', 'present', 'detected'] }}
+              {{ trigger.id == 'instant_on' or states(presence_entity) in ['home', 'on', 'present', 'detected'] }}
           - condition: template
             value_template: >
               {{ trigger.id == 'instant_on' or states(lux_sensor) | float(9999) <= lux_threshold | float }}

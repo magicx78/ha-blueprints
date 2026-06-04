@@ -15,13 +15,27 @@ validieren und auf GitHub veröffentlichen.
 | Tuer offen Alarm Pro v4 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | author nachgetragen; min_version 2024.10.0 war bereits vorhanden |
 | Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
 | GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
-| Bluepoint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | neu; author + min_version 2024.10.0 (triggers/actions-Syntax) + Input-Beschreibungen ergänzt |
+| Bluepoint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | neu; author + min_version 2024.10.0; Fix: Bypass global (Ein+Aus), Sofort-An ignoriert Lux+Anwesenheit |
 
 **Status-Legende:**
 - in Entwicklung
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-06-04 (Nachtrag: Logik-Fix)
+
+Code-Review des neuen mmWave-Blueprints ergab zwei Abweichungen zur Beschreibung,
+beide gefixt:
+- Bypass wirkte bisher nur beim Einschalten -> als globale Top-Level-Bedingung
+  (conditions:) umgesetzt; bei aktivem Bypass laeuft KEIN Zweig mehr (Ein + Aus).
+  Redundanter Bypass-Check im Einschalt-Zweig entfernt.
+- Sofort-An (instant_on) erforderte bisher Anwesenheit -> Praesenz-Bedingung
+  per "trigger.id == 'instant_on' or ..." uebersprungen; Sofort-An ignoriert nun
+  Lux UND Anwesenheit (nur Bypass kann es noch verhindern).
+- README + PROGRESS aktualisiert; YAML/Schema-Check bestanden.
 
 ---
 
