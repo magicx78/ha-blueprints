@@ -1,6 +1,9 @@
+# mmwave_light.yaml — Version 1.1.0 (2026-06-04)
 blueprint:
   name: Bluepoint mmWave Licht mit Lux, Anwesenheit, Timer und Bypass
   description: >
+    Version 1.1.0 (2026-06-04) — mmWave + optionale Bewegungsmelder & Tuerkontakte.
+
     Lichtsteuerung mit mmWave-Praesenzsensor, optionalen Bewegungsmeldern und
     Tuerkontakten, Luxwert, Anwesenheit, Ausschalt-Timer, Bypass und Sofort-An
     ohne Timer.
@@ -38,6 +41,7 @@ blueprint:
       sonst werden andere Raeume versehentlich beeinflusst.
   domain: automation
   author: "magicx78"
+  source_url: https://raw.githubusercontent.com/magicx78/ha-blueprints/main/blueprints/automation/mmwave_light.yaml
   homeassistant:
     min_version: "2024.10.0"
 
