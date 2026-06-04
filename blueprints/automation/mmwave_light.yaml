@@ -1,18 +1,38 @@
+# mmwave_light.yaml — Version 1.1.0 (2026-06-04)
 blueprint:
   name: Bluepoint mmWave Licht mit Lux, Anwesenheit, Timer und Bypass
   description: >
-    Lichtsteuerung mit mmWave-Praesenzsensor, Luxwert, Anwesenheit,
-    Ausschalt-Timer, Bypass und Sofort-An ohne Timer.
+    Version 1.1.0 (2026-06-04) — mmWave + optionale Bewegungsmelder & Tuerkontakte.
+
+    Lichtsteuerung mit mmWave-Praesenzsensor, optionalen Bewegungsmeldern und
+    Tuerkontakten, Luxwert, Anwesenheit, Ausschalt-Timer, Bypass und Sofort-An
+    ohne Timer.
+
     Das Licht schaltet nur ein, wenn jemand anwesend ist und es dunkel genug
     ist (Lux <= Schwellwert). Ueber den Sofort-An-Helfer kann das Licht
     unabhaengig von Lux und Anwesenheit eingeschaltet und vom automatischen
     Ausschalten ausgenommen werden. Ein Bypass-Helfer deaktiviert die
     Automation komplett.
 
-    Bypass-Helfer und Sofort-An-Helfer sind OPTIONAL: ohne Helfer laeuft die
-    Automation normal ueber mmWave/Lux/Anwesenheit.
+    Optionale Eingaben (Bewegungsmelder, Tuerkontakte, Bypass-Helfer,
+    Sofort-An-Helfer, Luxsensor) koennen leer bleiben; dann verhaelt sich die
+    Automation exakt wie ohne sie. Es gilt immer nur explizit 'on' als aktiv;
+    fehlende/leere/unknown/unavailable Entities blockieren nichts.
 
-    Hinweise:
+    Bewegungsmelder:
+    - Optional (Mehrfachauswahl, device_class motion/occupancy).
+    - Zaehlen als zusaetzliche Aktivitaet und verhindern das Ausschalten,
+      solange mindestens einer 'on' ist.
+
+    Tuerkontakte + Tuermodus:
+    - Optional (Mehrfachauswahl, device_class door/opening/window).
+    - door_mode 'none': Tuerkontakte werden komplett ignoriert.
+    - door_mode 'trigger_on_open': Tueroeffnung kann das Licht einschalten,
+      verhindert aber kein Ausschalten.
+    - door_mode 'hold_while_open': solange mindestens ein Tuerkontakt offen ist,
+      wird nicht ausgeschaltet.
+
+    Weitere Hinweise:
     - Daemmerungswert 0 deaktiviert die Luxpruefung (Raeume ohne brauchbaren
       Luxsensor: Luxsensor leer lassen UND Daemmerungswert auf 0 setzen).
     - Bypass und Sofort-An duerfen NICHT denselben Helfer verwenden
@@ -21,6 +41,7 @@ blueprint:
       sonst werden andere Raeume versehentlich beeinflusst.
   domain: automation
   author: "magicx78"
+  source_url: https://raw.githubusercontent.com/magicx78/ha-blueprints/main/blueprints/automation/mmwave_light.yaml
   homeassistant:
     min_version: "2024.10.0"
 
@@ -31,6 +52,58 @@ blueprint:
       selector:
         entity:
           domain: binary_sensor
+
+    motion_sensors:
+      name: Bewegungsmelder (optional)
+      description: >
+        Optional. Zusätzliche Bewegungs-/Belegungsmelder (Mehrfachauswahl).
+        Zählen als zusätzliche Aktivität und verhindern das Ausschalten, solange
+        mindestens einer 'on' ist. Leer lassen, wenn nicht benötigt.
+      default: []
+      selector:
+        entity:
+          multiple: true
+          domain: binary_sensor
+          device_class:
+            - motion
+            - occupancy
+
+    door_sensors:
+      name: Türkontakte (optional)
+      description: >
+        Optional. Tür-/Fensterkontakte (Mehrfachauswahl). Wirkung abhängig vom
+        Türmodus. Nur explizit 'on' gilt als offen. Leer lassen, wenn nicht
+        benötigt.
+      default: []
+      selector:
+        entity:
+          multiple: true
+          domain: binary_sensor
+          device_class:
+            - door
+            - opening
+            - window
+
+    door_mode:
+      name: Türmodus
+      description: >
+        Steuert, wie Türkontakte wirken.
+        "Türkontakte ignorieren": keinerlei Wirkung.
+        "Türöffnung schaltet ein": Türöffnung ist ein Einschaltimpuls,
+        verhindert aber kein Ausschalten.
+        "Offen hält Licht an": solange mindestens ein Türkontakt offen ist,
+        wird nicht ausgeschaltet (Türöffnung schaltet zusätzlich ein).
+      default: "none"
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - label: "Türkontakte ignorieren"
+              value: "none"
+            - label: "Türöffnung schaltet ein"
+              value: "trigger_on_open"
+            - label: "Offen hält Licht an"
+              value: "hold_while_open"
 
     lux_sensor:
       name: Luxsensor (optional)
@@ -107,80 +180,165 @@ blueprint:
 mode: restart
 
 variables:
+  # --- Roh-Eingaben (statisch) ---
   mmwave_sensor: !input mmwave_sensor
   lux_sensor: !input lux_sensor
   presence_entity: !input presence_entity
   bypass_helper: !input bypass_helper
   instant_on_helper: !input instant_on_helper
   lux_threshold: !input lux_threshold
+  motion_sensors: !input motion_sensors
+  door_sensors: !input door_sensors
+  door_mode: !input door_mode
+  # --- Abgeleitete Zustaende (Snapshot zur Trigger-Zeit) ---
+  # Nur explizit 'on' gilt als aktiv. Leere Liste / unknown / unavailable -> nicht aktiv.
+  bypass_active: "{{ is_state(bypass_helper, 'on') }}"
+  instant_on_active: >
+    {{ expand(instant_on_helper) | selectattr('state', 'eq', 'on') | list | count > 0 }}
+  motion_active: >
+    {{ expand(motion_sensors) | selectattr('state', 'eq', 'on') | list | count > 0 }}
+  door_open: >
+    {{ door_mode != 'none'
+       and (expand(door_sensors) | selectattr('state', 'eq', 'on') | list | count > 0) }}
 
 triggers:
+  # mmWave-Praesenz (Pflicht)
   - trigger: state
     entity_id: !input mmwave_sensor
     to: "on"
-    id: motion_on
-
+    id: mmwave_on
   - trigger: state
     entity_id: !input mmwave_sensor
     to: "off"
+    id: mmwave_off
+
+  # Bewegungsmelder (optional; leere Liste => Trigger feuert nie)
+  - trigger: state
+    entity_id: !input motion_sensors
+    to: "on"
+    id: motion_on
+  - trigger: state
+    entity_id: !input motion_sensors
+    to: "off"
     id: motion_off
 
+  # Sofort-An-Helfer (optional)
   - trigger: state
     entity_id: !input instant_on_helper
     to: "on"
     id: instant_on
-
   - trigger: state
     entity_id: !input instant_on_helper
     to: "off"
     id: instant_off
 
+  # Tuerkontakte (optional; Wirkung haengt vom Tuermodus ab)
+  - trigger: state
+    entity_id: !input door_sensors
+    from: "off"
+    to: "on"
+    id: door_open
+  - trigger: state
+    entity_id: !input door_sensors
+    from: "on"
+    to: "off"
+    id: door_closed
+
 conditions:
   # Bypass: blockiert nur, wenn ein echter Helfer existiert und explizit 'on' ist.
   # Fehlender / leerer / unavailable Helfer blockiert NICHT.
   - condition: template
-    value_template: "{{ not is_state(bypass_helper, 'on') }}"
+    value_template: "{{ not bypass_active }}"
 
 actions:
   - choose:
+      # ============================================================
+      # EINSCHALTEN
+      # Quellen: mmWave on, Bewegungsmelder on, Sofort-An on,
+      # oder Tueroeffnung (wenn Tuermodus dies erlaubt).
+      # ============================================================
       - conditions:
           - condition: trigger
             id:
+              - mmwave_on
               - motion_on
               - instant_on
+              - door_open
+          # Anwesenheit (Sofort-An ignoriert Anwesenheit)
           - condition: template
             value_template: >
-              {{ trigger.id == 'instant_on' or states(presence_entity) in ['home', 'on', 'present', 'detected'] }}
+              {{ trigger.id == 'instant_on'
+                 or states(presence_entity) in ['home', 'on', 'present', 'detected'] }}
+          # Aktivitaetsquelle vorhanden
           - condition: template
             value_template: >
-              {{ trigger.id == 'instant_on' or lux_threshold | float <= 0 or states(lux_sensor) | float(9999) <= lux_threshold | float }}
+              {{ trigger.id == 'instant_on'
+                 or is_state(mmwave_sensor, 'on')
+                 or motion_active
+                 or (door_mode in ['trigger_on_open', 'hold_while_open']
+                     and trigger.id == 'door_open') }}
+          # Lux (Sofort-An ignoriert Lux; Schwelle 0 deaktiviert Luxpruefung)
+          - condition: template
+            value_template: >
+              {{ trigger.id == 'instant_on'
+                 or lux_threshold | float <= 0
+                 or states(lux_sensor) | float(9999) <= lux_threshold | float }}
         sequence:
           - action: homeassistant.turn_on
             target: !input light_target
 
+      # ============================================================
+      # AUSSCHALTEN MIT DELAY
+      # Quellen: mmWave off, Bewegungsmelder off, Tuer geschlossen.
+      # Vor-Pruefung (Snapshot) verhindert unnoetige Timer; nach dem
+      # Delay werden ALLE relevanten Zustaende LIVE neu geprueft.
+      # ============================================================
       - conditions:
           - condition: trigger
-            id: motion_off
-          # Instant-On NICHT aktiv (leere Liste / unavailable => nicht aktiv)
+            id:
+              - mmwave_off
+              - motion_off
+              - door_closed
           - condition: template
-            value_template: >
-              {{ expand(instant_on_helper) | selectattr('state', 'eq', 'on') | list | count == 0 }}
+            value_template: "{{ not instant_on_active }}"
+          - condition: template
+            value_template: "{{ not is_state(mmwave_sensor, 'on') }}"
+          - condition: template
+            value_template: "{{ not motion_active }}"
+          - condition: template
+            value_template: "{{ not (door_mode == 'hold_while_open' and door_open) }}"
         sequence:
           - delay: !input off_delay
-          - condition: template
-            value_template: "{{ is_state(mmwave_sensor, 'off') }}"
-          # Live-Neuprüfung nach dem Delay (kein vorberechnetes Variable!)
+          # LIVE-Neubewertung nach dem Delay (Variablen sind Trigger-Zeit-Snapshots!)
+          - variables:
+              bypass_now: "{{ is_state(bypass_helper, 'on') }}"
+              instant_now: >
+                {{ expand(instant_on_helper) | selectattr('state', 'eq', 'on') | list | count > 0 }}
+              mmwave_now_on: "{{ is_state(mmwave_sensor, 'on') }}"
+              motion_now: >
+                {{ expand(motion_sensors) | selectattr('state', 'eq', 'on') | list | count > 0 }}
+              door_hold_now: >
+                {{ door_mode == 'hold_while_open'
+                   and (expand(door_sensors) | selectattr('state', 'eq', 'on') | list | count > 0) }}
           - condition: template
             value_template: >
-              {{ expand(instant_on_helper) | selectattr('state', 'eq', 'on') | list | count == 0 }}
+              {{ not bypass_now and not instant_now and not mmwave_now_on
+                 and not motion_now and not door_hold_now }}
           - action: homeassistant.turn_off
             target: !input light_target
 
+      # ============================================================
+      # SOFORT-AN AUS -> ggf. sofort ausschalten (ohne Delay),
+      # sofern keine andere Aktivitaet das Licht haelt.
+      # ============================================================
       - conditions:
           - condition: trigger
             id: instant_off
           - condition: template
-            value_template: "{{ is_state(mmwave_sensor, 'off') }}"
+            value_template: >
+              {{ not is_state(mmwave_sensor, 'on')
+                 and not motion_active
+                 and not (door_mode == 'hold_while_open' and door_open) }}
         sequence:
           - action: homeassistant.turn_off
             target: !input light_target

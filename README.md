@@ -113,6 +113,8 @@ Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jeman
 
 **Features:**
 - mmWave-Präsenzsensor als Trigger (Ein/Aus)
+- **Optionale Bewegungsmelder** (motion/occupancy, Mehrfachauswahl) als zusätzliche Aktivitätsquelle
+- **Optionale Türkontakte** (door/opening/window) mit Türmodus: ignorieren / Öffnung schaltet ein / offen hält Licht an
 - Anwesenheitsprüfung (Person / Gruppe / Helper)
 - Dämmerungsprüfung über Lux-Schwellwert – **Wert `0` deaktiviert die Luxprüfung**
 - Konfigurierbare Ausschaltverzögerung nach Wegfall der Präsenz
@@ -120,7 +122,12 @@ Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jeman
 - Bypass-Helfer deaktiviert die Automation komplett (Ein und Aus)
 - Steuert Lichter und/oder Schalter
 
-> **Optionale Eingaben:** Bypass-Helfer, Sofort-An-Helfer und Luxsensor sind optional und können leer bleiben — die Automation läuft dann normal über mmWave/Lux/Anwesenheit.
+> **Optionale Eingaben:** Bewegungsmelder, Türkontakte, Bypass-Helfer, Sofort-An-Helfer und Luxsensor sind optional und können leer bleiben — die Automation läuft dann genauso wie ohne sie. Es gilt immer nur explizit `on` als aktiv; fehlende/leere/`unknown`/`unavailable` Entities blockieren nichts.
+>
+> **Türmodus:**
+> - `none`: Türkontakte werden ignoriert.
+> - `trigger_on_open`: Türöffnung schaltet ein, verhindert aber kein Ausschalten.
+> - `hold_while_open`: solange mindestens ein Türkontakt offen ist, wird nicht ausgeschaltet.
 >
 > **Wichtig:**
 > - Räume ohne brauchbaren Luxsensor: Luxsensor leer lassen **und** Dämmerungswert auf `0` setzen.
