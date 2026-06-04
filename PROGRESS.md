@@ -15,13 +15,33 @@ validieren und auf GitHub veröffentlichen.
 | Tuer offen Alarm Pro v4 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | author nachgetragen; min_version 2024.10.0 war bereits vorhanden |
 | Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
 | GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
-| Bluepoint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | neu; author + min_version 2024.10.0; Fix: Bypass global (Ein+Aus), Sofort-An ignoriert Lux+Anwesenheit |
+| Bluepoint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | Bypass/Sofort-An/Luxsensor optional; Lux-Schwelle 0 = aus; robuste Bedingungen (not is_state / expand) |
 
 **Status-Legende:**
 - in Entwicklung
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-06-04 (Nachtrag 2: optionale Helfer + Lux 0)
+
+mmWave-Blueprint robuster gemacht (Pflicht-Helfer fuehrten zu kaputten Logiken,
+wenn Dummy-/geteilte Helfer eingetragen wurden):
+- bypass_helper jetzt optional (default ""), Bedingung von is_state(...,'off')
+  auf "not is_state(...,'on')" geaendert -> fehlender/leerer/unavailable Helfer
+  blockiert nicht; nur echter Helfer mit 'on' blockiert.
+- instant_on_helper jetzt optional als Mehrfach-Auswahl (default []), da ein leerer
+  Einzel-Entity-Wert in State-Triggern ungueltig ist (Muster wie presence_light).
+  Auswertung live via expand(instant_on_helper)|selectattr('state','eq','on').
+  WICHTIG: Live-Template statt Variable, damit der Re-Check NACH dem delay korrekt ist.
+- lux_sensor optional (default ""); Lux-Bedingung um "lux_threshold|float <= 0"
+  erweitert -> Schwellwert 0 deaktiviert die Luxpruefung (Raeume ohne Luxsensor:
+  leer lassen + Schwelle 0).
+- Doku in Blueprint-description, README und PROGRESS ergaenzt (Lux 0 = aus;
+  Bypass/Instant-On nicht denselben Helfer; keine Raum-Deaktivieren-Helper als Dummy).
+- YAML/Schema/yamllint bestanden.
 
 ---
 

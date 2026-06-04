@@ -114,11 +114,18 @@ Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jeman
 **Features:**
 - mmWave-Präsenzsensor als Trigger (Ein/Aus)
 - Anwesenheitsprüfung (Person / Gruppe / Helper)
-- Dämmerungsprüfung über Lux-Schwellwert
+- Dämmerungsprüfung über Lux-Schwellwert – **Wert `0` deaktiviert die Luxprüfung**
 - Konfigurierbare Ausschaltverzögerung nach Wegfall der Präsenz
 - Sofort-An ohne Timer (Helfer): sofort ein (ignoriert Lux + Anwesenheit), kein Auto-Aus
 - Bypass-Helfer deaktiviert die Automation komplett (Ein und Aus)
 - Steuert Lichter und/oder Schalter
+
+> **Optionale Eingaben:** Bypass-Helfer, Sofort-An-Helfer und Luxsensor sind optional und können leer bleiben — die Automation läuft dann normal über mmWave/Lux/Anwesenheit.
+>
+> **Wichtig:**
+> - Räume ohne brauchbaren Luxsensor: Luxsensor leer lassen **und** Dämmerungswert auf `0` setzen.
+> - Bypass und Sofort-An **nicht** denselben Helfer verwenden (die Bedeutungen widersprechen sich).
+> - Keinen vorhandenen Raum-Deaktivieren-Helper als Dummy missbrauchen — sonst werden andere Räume versehentlich beeinflusst.
 
 [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://raw.githubusercontent.com/magicx78/ha-blueprints/main/blueprints/automation/mmwave_light.yaml)
 
