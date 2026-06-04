@@ -5,8 +5,20 @@ blueprint:
     Ausschalt-Timer, Bypass und Sofort-An ohne Timer.
     Das Licht schaltet nur ein, wenn jemand anwesend ist und es dunkel genug
     ist (Lux <= Schwellwert). Ueber den Sofort-An-Helfer kann das Licht
-    unabhaengig von Lux eingeschaltet und vom automatischen Ausschalten
-    ausgenommen werden. Ein Bypass-Helfer deaktiviert die Automation komplett.
+    unabhaengig von Lux und Anwesenheit eingeschaltet und vom automatischen
+    Ausschalten ausgenommen werden. Ein Bypass-Helfer deaktiviert die
+    Automation komplett.
+
+    Bypass-Helfer und Sofort-An-Helfer sind OPTIONAL: ohne Helfer laeuft die
+    Automation normal ueber mmWave/Lux/Anwesenheit.
+
+    Hinweise:
+    - Daemmerungswert 0 deaktiviert die Luxpruefung (Raeume ohne brauchbaren
+      Luxsensor: Luxsensor leer lassen UND Daemmerungswert auf 0 setzen).
+    - Bypass und Sofort-An duerfen NICHT denselben Helfer verwenden
+      (die Bedeutungen widersprechen sich).
+    - Keinen vorhandenen Raum-Deaktivieren-Helper als Dummy missbrauchen,
+      sonst werden andere Raeume versehentlich beeinflusst.
   domain: automation
   author: "magicx78"
   homeassistant:
@@ -21,8 +33,11 @@ blueprint:
           domain: binary_sensor
 
     lux_sensor:
-      name: Luxsensor
-      description: Helligkeitssensor zur Dämmerungsprüfung.
+      name: Luxsensor (optional)
+      description: >
+        Helligkeitssensor zur Dämmerungsprüfung. Optional: ohne Luxsensor das
+        Feld leer lassen UND den Dämmerungswert auf 0 setzen (Luxprüfung aus).
+      default: ""
       selector:
         entity:
           domain: sensor
@@ -45,7 +60,9 @@ blueprint:
 
     lux_threshold:
       name: Dämmerungswert
-      description: Licht schaltet nur ein, wenn Lux kleiner/gleich diesem Wert ist.
+      description: >
+        Licht schaltet nur ein, wenn Lux kleiner/gleich diesem Wert ist.
+        Wert 0 deaktiviert die Luxprüfung komplett.
       default: 30
       selector:
         number:
@@ -63,17 +80,28 @@ blueprint:
         duration:
 
     bypass_helper:
-      name: Bypass Helper
-      description: Wenn EIN, macht die Automation nichts.
+      name: Bypass Helper (optional)
+      description: >
+        Optional. Wenn EIN, macht die Automation nichts (weder Ein- noch
+        Ausschalten). Leer lassen, wenn nicht benötigt. WICHTIG: NICHT denselben
+        Helfer wie für Sofort-An verwenden und KEINEN Raum-Deaktivieren-Helper
+        als Dummy missbrauchen.
+      default: ""
       selector:
         entity:
           domain: input_boolean
 
     instant_on_helper:
-      name: Sofort-An ohne Timer Helper
-      description: Wenn EIN, wird Licht sofort eingeschaltet und nicht automatisch ausgeschaltet.
+      name: Sofort-An ohne Timer Helper (optional)
+      description: >
+        Optional. Wenn EIN, wird Licht sofort eingeschaltet (ignoriert Lux und
+        Anwesenheit) und nicht automatisch ausgeschaltet. Leer lassen, wenn
+        nicht benötigt; ein Helfer genügt. WICHTIG: NICHT denselben Helfer wie
+        für Bypass verwenden.
+      default: []
       selector:
         entity:
+          multiple: true
           domain: input_boolean
 
 mode: restart
@@ -108,8 +136,10 @@ triggers:
     id: instant_off
 
 conditions:
+  # Bypass: blockiert nur, wenn ein echter Helfer existiert und explizit 'on' ist.
+  # Fehlender / leerer / unavailable Helfer blockiert NICHT.
   - condition: template
-    value_template: "{{ is_state(bypass_helper, 'off') }}"
+    value_template: "{{ not is_state(bypass_helper, 'on') }}"
 
 actions:
   - choose:
@@ -123,7 +153,7 @@ actions:
               {{ trigger.id == 'instant_on' or states(presence_entity) in ['home', 'on', 'present', 'detected'] }}
           - condition: template
             value_template: >
-              {{ trigger.id == 'instant_on' or states(lux_sensor) | float(9999) <= lux_threshold | float }}
+              {{ trigger.id == 'instant_on' or lux_threshold | float <= 0 or states(lux_sensor) | float(9999) <= lux_threshold | float }}
         sequence:
           - action: homeassistant.turn_on
             target: !input light_target
@@ -131,14 +161,18 @@ actions:
       - conditions:
           - condition: trigger
             id: motion_off
+          # Instant-On NICHT aktiv (leere Liste / unavailable => nicht aktiv)
           - condition: template
-            value_template: "{{ is_state(instant_on_helper, 'off') }}"
+            value_template: >
+              {{ expand(instant_on_helper) | selectattr('state', 'eq', 'on') | list | count == 0 }}
         sequence:
           - delay: !input off_delay
           - condition: template
             value_template: "{{ is_state(mmwave_sensor, 'off') }}"
+          # Live-Neuprüfung nach dem Delay (kein vorberechnetes Variable!)
           - condition: template
-            value_template: "{{ is_state(instant_on_helper, 'off') }}"
+            value_template: >
+              {{ expand(instant_on_helper) | selectattr('state', 'eq', 'on') | list | count == 0 }}
           - action: homeassistant.turn_off
             target: !input light_target
 
