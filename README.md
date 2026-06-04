@@ -161,6 +161,21 @@ Bei Blueprints mit Voraussetzungen (Log Viewer, GrowWarn) zuerst die beschrieben
 
 ---
 
+## Versionierung & Releases
+
+Releases werden automatisch über GitHub Actions erstellt (Workflow `.github/workflows/release.yml`).
+
+**Neuen Release erzeugen:**
+1. Die Datei [`VERSION`](VERSION) auf die neue Versionsnummer setzen (z.B. `1.2.0`).
+2. Änderung nach `main` bringen (Commit/PR-Merge).
+3. Der Workflow legt automatisch Tag **und** GitHub-Release `vX.Y.Z` mit generierten Notes an.
+
+Alternativ lässt sich der Workflow manuell über **Actions → Release → Run workflow** auslösen.
+
+Aktuelle Version: siehe [`VERSION`](VERSION). Der mmWave-Blueprint trägt seine Version zusätzlich in der Beschreibung und besitzt eine `source_url` für den Re-Import/Update in Home Assistant.
+
+---
+
 ## Lizenz
 
 MIT
