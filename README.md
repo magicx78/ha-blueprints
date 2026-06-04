@@ -105,6 +105,25 @@ Liest den Home Assistant Log gefiltert auf eine ausgewählte Automation aus und 
 
 ---
 
+### Bluepoint mmWave Licht mit Lux, Anwesenheit, Timer und Bypass
+
+Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jemand anwesend ist (Person/Gruppe/Helper auf `home`/`on`/`present`/`detected`) und es dunkel genug ist (Lux ≤ Schwellwert). Nach Wegfall der Präsenz wird das Licht nach einer konfigurierbaren Verzögerung ausgeschaltet. Ein Sofort-An-Helfer schaltet das Licht unabhängig von Lux **und** Anwesenheit ein und nimmt es vom automatischen Ausschalten aus. Ein Bypass-Helfer deaktiviert die Automation komplett – bei aktivem Bypass wird weder ein- noch ausgeschaltet.
+
+**Erfordert: Home Assistant 2024.10.0** (neue `triggers:`/`actions:`-Syntax)
+
+**Features:**
+- mmWave-Präsenzsensor als Trigger (Ein/Aus)
+- Anwesenheitsprüfung (Person / Gruppe / Helper)
+- Dämmerungsprüfung über Lux-Schwellwert
+- Konfigurierbare Ausschaltverzögerung nach Wegfall der Präsenz
+- Sofort-An ohne Timer (Helfer): sofort ein (ignoriert Lux + Anwesenheit), kein Auto-Aus
+- Bypass-Helfer deaktiviert die Automation komplett (Ein und Aus)
+- Steuert Lichter und/oder Schalter
+
+[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://raw.githubusercontent.com/magicx78/ha-blueprints/main/blueprints/automation/mmwave_light.yaml)
+
+---
+
 ## Installation
 
 1. Auf den "Import Blueprint" Button des gewünschten Blueprints klicken.
@@ -124,6 +143,7 @@ Bei Blueprints mit Voraussetzungen (Log Viewer, GrowWarn) zuerst die beschrieben
 | Tür Alarm Pro v4 | 2024.10.0 |
 | Automation Log Viewer | 2024.6.0 |
 | GrowWarn | 2024.6.0 |
+| Bluepoint mmWave Licht | 2024.10.0 |
 
 ---
 
