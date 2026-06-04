@@ -15,13 +15,33 @@ validieren und auf GitHub veröffentlichen.
 | Tuer offen Alarm Pro v4 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | author nachgetragen; min_version 2024.10.0 war bereits vorhanden |
 | Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
 | GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
-| Bluepoint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | Bypass/Sofort-An/Luxsensor optional; Lux-Schwelle 0 = aus; robuste Bedingungen (not is_state / expand) |
+| Bluepoint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | + optionale Bewegungsmelder + Türkontakte (door_mode none/trigger_on_open/hold_while_open); Bypass/Sofort-An/Luxsensor optional; Lux 0 = aus |
 
 **Status-Legende:**
 - in Entwicklung
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-06-04 (Nachtrag 3: Bewegungsmelder + Türkontakte)
+
+mmWave-Blueprint um optionale Aktivitaetsquellen erweitert (bestehende Logik unveraendert):
+- Neue Inputs: motion_sensors (multiple, device_class motion/occupancy, default []),
+  door_sensors (multiple, device_class door/opening/window, default []),
+  door_mode (select: none / trigger_on_open / hold_while_open, default none).
+- mmWave-Trigger-IDs zu mmwave_on/mmwave_off umbenannt; motion_on/off jetzt fuer
+  echte Bewegungsmelder; neue Trigger door_open/door_closed.
+- Einschalten: zusaetzlich ueber Bewegungsmelder oder (je nach Tuermodus) Tueroeffnung.
+- Ausschalten: blockiert solange mmWave on ODER ein Bewegungsmelder on ODER (im Modus
+  hold_while_open) eine Tuer offen ODER Sofort-An aktiv. Nach Delay LIVE-Neupruefung
+  via variables-Action (inkl. Bypass), damit kein veralteter Snapshot ausschaltet.
+- Zentrale Template-Variablen: bypass_active, instant_on_active, motion_active, door_open
+  (nur explizit 'on' = aktiv; leere Liste/unknown/unavailable => nicht aktiv).
+- Leere Entity-Listen in Triggern bleiben gueltig (default []), keine Dummy-Entities.
+- Verifikation: CI-Schema + yamllint OK; 17 Logik-Szenarien per Jinja2-Sim bestanden
+  (alle Akzeptanzkriterien).
 
 ---
 
