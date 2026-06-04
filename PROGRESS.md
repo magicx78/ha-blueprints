@@ -25,6 +25,21 @@ validieren und auf GitHub veröffentlichen.
 
 ---
 
+## Aktueller Stand — 2026-06-04 (Nachtrag 4: Release-Automatisierung)
+
+Problem: Tags/Releases lassen sich nicht aus der Arbeitsumgebung pushen (Git 403,
+kein Release-API-Tool). Dauerhafte Loesung:
+- Neue Datei VERSION (aktuell 1.1.0).
+- Neuer Workflow .github/workflows/release.yml (permissions: contents: write):
+  loest bei Aenderung von VERSION auf main aus (und per workflow_dispatch),
+  erstellt via GITHUB_TOKEN + gh automatisch Tag + Release vX.Y.Z (--generate-notes),
+  idempotent (kein Doppel-Release).
+- Damit entsteht beim Merge automatisch Release v1.1.0; kuenftig genuegt ein
+  Bump der VERSION-Datei.
+- README um Abschnitt "Versionierung & Releases" ergaenzt.
+
+---
+
 ## Aktueller Stand — 2026-06-04 (Nachtrag 3: Bewegungsmelder + Türkontakte)
 
 mmWave-Blueprint um optionale Aktivitaetsquellen erweitert (bestehende Logik unveraendert):

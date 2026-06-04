@@ -1,0 +1,63 @@
+name: Release
+
+# Erstellt automatisch einen GitHub-Release + Tag, sobald sich die Datei VERSION
+# auf main aendert. Zusaetzlich manuell ausloesbar (workflow_dispatch).
+#
+# Hintergrund: Tags/Releases lassen sich nicht aus jeder Umgebung pushen.
+# Dieser Workflow laeuft IN GitHub Actions und nutzt den GITHUB_TOKEN, der die
+# noetigen Rechte (contents: write) hat. So genuegt ein Bump der VERSION-Datei
+# (per PR/Merge), um Release + Tag zu erzeugen.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "VERSION"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Version aus VERSION lesen
+        id: ver
+        run: |
+          version="$(tr -d ' \t\n\r' < VERSION)"
+          if [ -z "$version" ]; then
+            echo "VERSION-Datei ist leer." >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Gefundene Version: $version"
+
+      - name: Pruefen, ob Release bereits existiert
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "v${{ steps.ver.outputs.version }}" \
+               --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release v${{ steps.ver.outputs.version }} existiert bereits — nichts zu tun."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Release + Tag erstellen
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.ver.outputs.version }}" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "v${{ steps.ver.outputs.version }}" \
+            --generate-notes
+          echo "Release v${{ steps.ver.outputs.version }} erstellt."
