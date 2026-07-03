@@ -15,13 +15,40 @@ validieren und auf GitHub veröffentlichen.
 | Tuer offen Alarm Pro v4 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | author nachgetragen; min_version 2024.10.0 war bereits vorhanden |
 | Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
 | GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
-| Bluepoint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | + optionale Bewegungsmelder + Türkontakte (door_mode none/trigger_on_open/hold_while_open); Bypass/Sofort-An/Luxsensor optional; Lux 0 = aus |
+| Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung beim Ausschalten; activity_active-DRY; Name-Typo "Bluepoint" behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte (door_mode none/trigger_on_open/hold_while_open); Bypass/Sofort-An/Luxsensor optional |
 
 **Status-Legende:**
 - in Entwicklung
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-07-03 (v1.2.0: mmWave Review + Lux-Robustheit)
+
+Vollstaendiges Review des mmWave-Blueprints nach dem Blueprint-Review-Template.
+Ergebnis: wahrscheinlich funktionsfaehig / produktiv einsetzbar, keine harten
+YAML-/Syntaxfehler. Zwei Punkte umgesetzt, Version 1.1.0 -> 1.2.0:
+
+- Lux-Robustheit (Verhaltensaenderung, analog presence_light):
+  Neue Variable lux_ok. Ein leerer ODER unknown/unavailable Luxsensor
+  deaktiviert die Luxpruefung jetzt automatisch, statt das Einschalten zu
+  blockieren (bisher float(9999)-Fallback = "zu hell" -> Licht blieb nachts aus,
+  wenn der Sensor ausfiel oder die Schwelle nicht auf 0 stand). Schwelle 0
+  deaktiviert die Pruefung weiterhin ebenfalls. Lux-Checks im Einschalt- und im
+  Bypass-Aus-Zweig nutzen nun lux_ok.
+- Aufraeumung (keine Verhaltensaenderung): die bereits definierte, aber
+  ungenutzte Variable activity_active ersetzt den dreifach wiederholten Ausdruck
+  "mmwave on OR motion OR (hold_while_open AND door offen)" (Bypass-Aus-Zweig,
+  Ausschalt-Vorpruefung, Sofort-An-Aus-Zweig). Der LIVE-Recheck NACH dem delay
+  (bypass_now/instant_now/... ) bleibt bewusst inline/live und wird NICHT durch
+  den Trigger-Zeit-Snapshot activity_active ersetzt.
+- Aus dem 1.1.1-Entwurf uebernommen: Bypass-Neubewertung beim Ausschalten
+  (bypass_off laeuft trotz Top-Level-Bypass-Blockade durch und schaltet je nach
+  Aktivitaet ein/aus) sowie Name-Typo-Fix "Bluepoint" -> "Blueprint".
+- Doku (Blueprint-description, Input-Texte, README) an das neue Lux-Verhalten
+  angepasst; VERSION auf 1.2.0 gebumpt (loest Release v1.2.0 aus).
 
 ---
 

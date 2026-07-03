@@ -105,9 +105,9 @@ Liest den Home Assistant Log gefiltert auf eine ausgewählte Automation aus und 
 
 ---
 
-### Bluepoint mmWave Licht mit Lux, Anwesenheit, Timer und Bypass
+### Blueprint mmWave Licht mit Lux, Anwesenheit, Timer und Bypass
 
-Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jemand anwesend ist (Person/Gruppe/Helper auf `home`/`on`/`present`/`detected`) und es dunkel genug ist (Lux ≤ Schwellwert). Nach Wegfall der Präsenz wird das Licht nach einer konfigurierbaren Verzögerung ausgeschaltet. Ein Sofort-An-Helfer schaltet das Licht unabhängig von Lux **und** Anwesenheit ein und nimmt es vom automatischen Ausschalten aus. Ein Bypass-Helfer deaktiviert die Automation komplett – bei aktivem Bypass wird weder ein- noch ausgeschaltet.
+Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jemand anwesend ist (Person/Gruppe/Helper auf `home`/`on`/`present`/`detected`) und es dunkel genug ist (Lux ≤ Schwellwert). Nach Wegfall der Präsenz wird das Licht nach einer konfigurierbaren Verzögerung ausgeschaltet. Ein Sofort-An-Helfer schaltet das Licht unabhängig von Lux **und** Anwesenheit ein und nimmt es vom automatischen Ausschalten aus. Ein Bypass-Helfer deaktiviert die Automation komplett – bei aktivem Bypass wird weder ein- noch ausgeschaltet; beim Ausschalten des Bypass wird die Situation neu bewertet.
 
 **Erfordert: Home Assistant 2024.10.0** (neue `triggers:`/`actions:`-Syntax)
 
@@ -116,7 +116,7 @@ Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jeman
 - **Optionale Bewegungsmelder** (motion/occupancy, Mehrfachauswahl) als zusätzliche Aktivitätsquelle
 - **Optionale Türkontakte** (door/opening/window) mit Türmodus: ignorieren / Öffnung schaltet ein / offen hält Licht an
 - Anwesenheitsprüfung (Person / Gruppe / Helper)
-- Dämmerungsprüfung über Lux-Schwellwert – **Wert `0` deaktiviert die Luxprüfung**
+- Dämmerungsprüfung über Lux-Schwellwert – **Wert `0` deaktiviert die Luxprüfung**; ein leerer / `unknown` / `unavailable` Luxsensor deaktiviert sie automatisch (Licht funktioniert weiter)
 - Konfigurierbare Ausschaltverzögerung nach Wegfall der Präsenz
 - Sofort-An ohne Timer (Helfer): sofort ein (ignoriert Lux + Anwesenheit), kein Auto-Aus
 - Bypass-Helfer deaktiviert die Automation komplett (Ein und Aus)
@@ -130,7 +130,7 @@ Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jeman
 > - `hold_while_open`: solange mindestens ein Türkontakt offen ist, wird nicht ausgeschaltet.
 >
 > **Wichtig:**
-> - Räume ohne brauchbaren Luxsensor: Luxsensor leer lassen **und** Dämmerungswert auf `0` setzen.
+> - Räume ohne brauchbaren Luxsensor: Luxsensor einfach leer lassen — die Luxprüfung wird dann automatisch übersprungen (ein Dämmerungswert von `0` bewirkt dasselbe).
 > - Bypass und Sofort-An **nicht** denselben Helfer verwenden (die Bedeutungen widersprechen sich).
 > - Keinen vorhandenen Raum-Deaktivieren-Helper als Dummy missbrauchen — sonst werden andere Räume versehentlich beeinflusst.
 
@@ -157,7 +157,7 @@ Bei Blueprints mit Voraussetzungen (Log Viewer, GrowWarn) zuerst die beschrieben
 | Tür Alarm Pro v4 | 2024.10.0 |
 | Automation Log Viewer | 2024.6.0 |
 | GrowWarn | 2024.6.0 |
-| Bluepoint mmWave Licht | 2024.10.0 |
+| Blueprint mmWave Licht | 2024.10.0 |
 
 ---
 
