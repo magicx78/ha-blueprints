@@ -15,13 +15,38 @@ validieren und auf GitHub veröffentlichen.
 | Tuer offen Alarm Pro v4 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | author nachgetragen; min_version 2024.10.0 war bereits vorhanden |
 | Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
 | GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
-| Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.4.0: mmWave-Sensor optional (Mehrfachauswahl, default []); mind. eine Aktivitätsquelle nötig. v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung; activity_active-DRY; Name-Typo behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte; Bypass/Sofort-An/Luxsensor optional |
+| Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.5.0: Garagentore (cover + binary_sensor) mit eigenem Garagenmodus. v1.4.0: mmWave-Sensor optional (Mehrfachauswahl, default []); mind. eine Aktivitätsquelle nötig. v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung; activity_active-DRY; Name-Typo behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte; Bypass/Sofort-An/Luxsensor optional |
 
 **Status-Legende:**
 - in Entwicklung
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-07-03 (v1.5.0: Garagentore)
+
+Garagentor-Unterstuetzung ergaenzt (Garagentore lassen sich nicht als
+Tuerkontakt auswaehlen: cover-Domain bzw. device_class garage passt nicht in den
+door/opening/window-Filter):
+
+- Neuer Eingang `garage_doors` (multiple, default []), Selector domain
+  [binary_sensor, cover] OHNE device_class-Filter, damit sowohl cover- als auch
+  binary_sensor-Garagentore erscheinen.
+- Neuer Eingang `garage_mode` (none / trigger_on_open / hold_while_open,
+  default hold_while_open) — unabhaengig vom Tuermodus.
+- "Offen" fuer Garagentore = Zustand in ['on','open','opening'] (cover UND
+  binary_sensor abgedeckt); via `selectattr('state','in',[...])`.
+- Neue Trigger garage_open (to: on/open/opening) und garage_closed
+  (to: off/closed) — ohne `from`, damit cover-Zwischenzustaende sauber greifen.
+- Neue Variable `garage_open`; in activity_active, Einschalt-Aktivitaetsquelle,
+  Off-Delay-Trigger-Liste und LIVE-Recheck (`garage_hold_now`) integriert —
+  vollstaendig parallel zur bestehenden Tuer-Logik.
+- description + README + Garagenmodus-Doku ergaenzt. VERSION 1.4.0 -> 1.5.0.
+- Verifikation lokal: yamllint relaxed, Schema-Check, Jinja-Compile (inkl.
+  'in'-Test in selectattr) + End-to-End-Simulation (cover open/opening/closed,
+  binary_sensor on/off, trigger_on_open vs hold_while_open).
 
 ---
 

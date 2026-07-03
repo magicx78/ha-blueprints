@@ -111,12 +111,13 @@ Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jeman
 
 **Erfordert: Home Assistant 2024.10.0** (neue `triggers:`/`actions:`-Syntax)
 
-> **Hinweis:** Alle Aktivitätsquellen sind optional, aber **mindestens eine** (mmWave-Sensor, Bewegungsmelder oder Türkontakt im passenden Türmodus) muss konfiguriert sein, sonst geht das Licht nie automatisch an.
+> **Hinweis:** Alle Aktivitätsquellen sind optional, aber **mindestens eine** (mmWave-Sensor, Bewegungsmelder, Türkontakt oder Garagentor im passenden Modus) muss konfiguriert sein, sonst geht das Licht nie automatisch an.
 
 **Features:**
 - **Optionale mmWave-Präsenzsensoren** (Mehrfachauswahl) als Trigger (Ein/Aus)
 - **Optionale Bewegungsmelder** (motion/occupancy, Mehrfachauswahl) als zusätzliche Aktivitätsquelle
 - **Optionale Türkontakte** (door/opening/window) mit Türmodus: ignorieren / Öffnung schaltet ein / offen hält Licht an
+- **Optionale Garagentore** (`cover` oder `binary_sensor`) mit eigenem Garagenmodus — für Garagentore, die sich nicht als Türkontakt auswählen lassen (Zustände `on`/`open`/`opening` gelten als offen)
 - Anwesenheitsprüfung (Person / Gruppe / Helper)
 - Dämmerungsprüfung über Lux-Schwellwert – **Wert `0` deaktiviert die Luxprüfung**; ein leerer / `unknown` / `unavailable` Luxsensor deaktiviert sie automatisch (Licht funktioniert weiter)
 - **Lux-Trigger:** sinkt die Helligkeit unter den Schwellwert, während der mmWave-Sensor bereits Präsenz meldet, schaltet das Licht automatisch ein (auch ohne neues Bewegungsevent)

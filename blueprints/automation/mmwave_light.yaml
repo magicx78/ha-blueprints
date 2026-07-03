@@ -1,16 +1,17 @@
-# mmwave_light.yaml — Version 1.4.0 (2026-07-03)
+# mmwave_light.yaml — Version 1.5.0 (2026-07-03)
 blueprint:
   name: Blueprint mmWave Licht mit Lux, Anwesenheit, Timer und Bypass
   description: >
-    Version 1.4.0 (2026-07-03) — mmWave, Bewegungsmelder & Tuerkontakte alle optional.
+    Version 1.5.0 (2026-07-03) — mmWave, Bewegungsmelder, Tuerkontakte &
+    Garagentore, alle optional.
 
     Lichtsteuerung mit optionalem mmWave-Praesenzsensor, optionalen
-    Bewegungsmeldern und Tuerkontakten, Luxwert, Anwesenheit, Ausschalt-Timer,
-    Bypass und Sofort-An ohne Timer.
+    Bewegungsmeldern, Tuerkontakten und Garagentoren, Luxwert, Anwesenheit,
+    Ausschalt-Timer, Bypass und Sofort-An ohne Timer.
 
-    Mindestens EINE Aktivitaetsquelle (mmWave-Sensor, Bewegungsmelder oder
-    Tuerkontakt im passenden Tuermodus) muss konfiguriert sein, sonst geht das
-    Licht nie automatisch an.
+    Mindestens EINE Aktivitaetsquelle (mmWave-Sensor, Bewegungsmelder,
+    Tuerkontakt oder Garagentor im passenden Modus) muss konfiguriert sein,
+    sonst geht das Licht nie automatisch an.
 
     Das Licht schaltet nur ein, wenn jemand anwesend ist und es dunkel genug
     ist (Lux <= Schwellwert). Ueber den Sofort-An-Helfer kann das Licht
@@ -19,9 +20,17 @@ blueprint:
     Automation komplett.
 
     Optionale Eingaben (mmWave-Sensor, Bewegungsmelder, Tuerkontakte,
-    Bypass-Helfer, Sofort-An-Helfer, Luxsensor) koennen leer bleiben; dann
-    verhaelt sich die Automation exakt wie ohne sie. Es gilt immer nur explizit
-    'on' als aktiv; fehlende/leere/unknown/unavailable Entities blockieren nichts.
+    Garagentore, Bypass-Helfer, Sofort-An-Helfer, Luxsensor) koennen leer
+    bleiben; dann verhaelt sich die Automation exakt wie ohne sie. Es gilt immer
+    nur explizit aktive Zustaende; fehlende/leere/unknown/unavailable Entities
+    blockieren nichts.
+
+    Neu in 1.5.0:
+    - Garagentore: neuer optionaler Eingang (Mehrfachauswahl) plus eigener
+      Garagenmodus (ignorieren / Oeffnung schaltet ein / offen haelt Licht an).
+      Unterstuetzt sowohl cover-Entities (Zustand open/opening/closed) als auch
+      binary_sensor (on/off) — gedacht fuer Garagentore, die sich nicht als
+      Tuerkontakt auswaehlen lassen. Als "offen" gelten on / open / opening.
 
     Neu in 1.4.0:
     - mmWave-Praesenzsensor ist jetzt optional und als Mehrfachauswahl
@@ -59,6 +68,15 @@ blueprint:
       verhindert aber kein Ausschalten.
     - door_mode 'hold_while_open': solange mindestens ein Tuerkontakt offen ist,
       wird nicht ausgeschaltet.
+
+    Garagentore + Garagenmodus:
+    - Optional (Mehrfachauswahl). cover ODER binary_sensor.
+    - Eigener Garagenmodus, unabhaengig vom Tuermodus.
+    - garage_mode 'none': Garagentore werden ignoriert.
+    - garage_mode 'trigger_on_open': Oeffnung kann das Licht einschalten,
+      verhindert aber kein Ausschalten.
+    - garage_mode 'hold_while_open': solange mindestens ein Garagentor offen ist,
+      wird nicht ausgeschaltet (Oeffnung schaltet zusaetzlich ein).
 
     Bypass:
     - Optional (Mehrfachauswahl, input_boolean; normalerweise genau ein Helfer).
@@ -146,6 +164,45 @@ blueprint:
             - label: "Türkontakte ignorieren"
               value: "none"
             - label: "Türöffnung schaltet ein"
+              value: "trigger_on_open"
+            - label: "Offen hält Licht an"
+              value: "hold_while_open"
+
+    garage_doors:
+      name: Garagentor(e) (optional)
+      description: >
+        Optional. Garagentore als Sensor ODER Antrieb (Mehrfachauswahl).
+        Unterstützt sowohl `cover`-Entities (Zustand offen/geschlossen) als auch
+        `binary_sensor` (on/off) — geeignet für Garagentore, die sich nicht als
+        Türkontakt auswählen lassen. Als "offen" gelten die Zustände on / open /
+        opening. Wirkung abhängig vom Garagenmodus. Leer lassen, wenn nicht
+        benötigt.
+      default: []
+      selector:
+        entity:
+          multiple: true
+          domain:
+            - binary_sensor
+            - cover
+
+    garage_mode:
+      name: Garagenmodus
+      description: >
+        Steuert, wie Garagentore wirken (analog zum Türmodus, aber unabhängig
+        einstellbar).
+        "Garagentore ignorieren": keinerlei Wirkung.
+        "Öffnung schaltet ein": Öffnen ist ein Einschaltimpuls, verhindert aber
+        kein Ausschalten.
+        "Offen hält Licht an": solange mindestens ein Garagentor offen ist, wird
+        nicht ausgeschaltet (Öffnen schaltet zusätzlich ein).
+      default: "hold_while_open"
+      selector:
+        select:
+          mode: dropdown
+          options:
+            - label: "Garagentore ignorieren"
+              value: "none"
+            - label: "Öffnung schaltet ein"
               value: "trigger_on_open"
             - label: "Offen hält Licht an"
               value: "hold_while_open"
@@ -239,6 +296,8 @@ variables:
   motion_sensors: !input motion_sensors
   door_sensors: !input door_sensors
   door_mode: !input door_mode
+  garage_doors: !input garage_doors
+  garage_mode: !input garage_mode
 
   # --- Abgeleitete Zustaende (Snapshot zur Trigger-Zeit) ---
   # Nur explizit 'on' gilt als aktiv. Leere Liste / unknown / unavailable -> nicht aktiv.
@@ -255,10 +314,17 @@ variables:
   door_open: >
     {{ door_mode != 'none'
        and (expand(door_sensors) | selectattr('state', 'eq', 'on') | list | count > 0) }}
+  # Garagentor offen. Unterstuetzt cover ('open'/'opening') und binary_sensor ('on').
+  garage_open: >
+    {{ garage_mode != 'none'
+       and (expand(garage_doors)
+            | selectattr('state', 'in', ['on', 'open', 'opening'])
+            | list | count > 0) }}
   activity_active: >
     {{ mmwave_active
        or motion_active
-       or (door_mode == 'hold_while_open' and door_open) }}
+       or (door_mode == 'hold_while_open' and door_open)
+       or (garage_mode == 'hold_while_open' and garage_open) }}
   # Luxpruefung (Snapshot). True = "hell genug bzw. Pruefung aus" -> Einschalten erlaubt.
   # Leerer / unknown / unavailable Luxsensor ODER Schwelle 0 -> Pruefung deaktiviert.
   lux_ok: >
@@ -348,6 +414,23 @@ triggers:
     to: "off"
     id: door_closed
 
+  # Garagentore (optional; Wirkung haengt vom Garagenmodus ab).
+  # Ohne 'from' und mit Zustands-Liste, damit sowohl cover (open/opening/closed)
+  # als auch binary_sensor (on/off) sauber erfasst werden.
+  - trigger: state
+    entity_id: !input garage_doors
+    to:
+      - "on"
+      - "open"
+      - "opening"
+    id: garage_open
+  - trigger: state
+    entity_id: !input garage_doors
+    to:
+      - "off"
+      - "closed"
+    id: garage_closed
+
 conditions:
   # Bypass an: Automation blockieren.
   # Ausnahme: bypass_off muss durchlaufen, damit nach Ende des Bypass neu bewertet wird.
@@ -387,9 +470,9 @@ actions:
 
       # ============================================================
       # EINSCHALTEN
-      # Quellen: mmWave on, Bewegungsmelder on, Sofort-An on,
-      # Tueroeffnung (wenn Tuermodus dies erlaubt) oder Lux faellt unter
-      # Schwelle bei stehender mmWave-Praesenz (lux_below).
+      # Quellen: mmWave on, Bewegungsmelder on, Sofort-An on, Tueroeffnung
+      # (wenn Tuermodus erlaubt), Garagenoeffnung (wenn Garagenmodus erlaubt)
+      # oder Lux faellt unter Schwelle bei stehender mmWave-Praesenz (lux_below).
       # ============================================================
       - conditions:
           - condition: trigger
@@ -398,6 +481,7 @@ actions:
               - motion_on
               - instant_on
               - door_open
+              - garage_open
               - lux_below
           # Anwesenheit (Sofort-An ignoriert Anwesenheit)
           - condition: template
@@ -411,7 +495,9 @@ actions:
                  or mmwave_active
                  or motion_active
                  or (door_mode in ['trigger_on_open', 'hold_while_open']
-                     and trigger.id == 'door_open') }}
+                     and trigger.id == 'door_open')
+                 or (garage_mode in ['trigger_on_open', 'hold_while_open']
+                     and trigger.id == 'garage_open') }}
           # Lux (Sofort-An ignoriert Lux; Schwelle 0 / kein Luxsensor deaktiviert Luxpruefung)
           - condition: template
             value_template: "{{ trigger.id == 'instant_on' or lux_ok }}"
@@ -421,7 +507,7 @@ actions:
 
       # ============================================================
       # AUSSCHALTEN MIT DELAY
-      # Quellen: mmWave off, Bewegungsmelder off, Tuer geschlossen.
+      # Quellen: mmWave off, Bewegungsmelder off, Tuer/Garage geschlossen.
       # Vor-Pruefung (Snapshot) verhindert unnoetige Timer; nach dem
       # Delay werden ALLE relevanten Zustaende LIVE neu geprueft.
       # ============================================================
@@ -431,6 +517,7 @@ actions:
               - mmwave_off
               - motion_off
               - door_closed
+              - garage_closed
           - condition: template
             value_template: "{{ not instant_on_active }}"
           - condition: template
@@ -450,10 +537,15 @@ actions:
               door_hold_now: >
                 {{ door_mode == 'hold_while_open'
                    and (expand(door_sensors) | selectattr('state', 'eq', 'on') | list | count > 0) }}
+              garage_hold_now: >
+                {{ garage_mode == 'hold_while_open'
+                   and (expand(garage_doors)
+                        | selectattr('state', 'in', ['on', 'open', 'opening'])
+                        | list | count > 0) }}
           - condition: template
             value_template: >
               {{ not bypass_now and not instant_now and not mmwave_now_on
-                 and not motion_now and not door_hold_now }}
+                 and not motion_now and not door_hold_now and not garage_hold_now }}
           - action: homeassistant.turn_off
             target: !input light_target
 
