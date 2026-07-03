@@ -15,13 +15,40 @@ validieren und auf GitHub veröffentlichen.
 | Tuer offen Alarm Pro v4 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | author nachgetragen; min_version 2024.10.0 war bereits vorhanden |
 | Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
 | GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
-| Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung beim Ausschalten; activity_active-DRY; Name-Typo "Bluepoint" behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte (door_mode none/trigger_on_open/hold_while_open); Bypass/Sofort-An/Luxsensor optional |
+| Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.4.0: mmWave-Sensor optional (Mehrfachauswahl, default []); mind. eine Aktivitätsquelle nötig. v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung; activity_active-DRY; Name-Typo behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte; Bypass/Sofort-An/Luxsensor optional |
 
 **Status-Legende:**
 - in Entwicklung
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-07-03 (v1.4.0: mmWave-Sensor optional)
+
+mmWave-Praesenzsensor auf Wunsch optional gemacht:
+
+- Input `mmwave_sensor`: von Pflicht-Einzel-Entity auf `multiple: true` +
+  `default: []` umgestellt (Muster wie motion_sensors). Der Input-KEY bleibt
+  `mmwave_sensor` -> bestehende Configs mit einem einzelnen Sensor laufen zur
+  Laufzeit unveraendert weiter (String wird durchgereicht; State-Trigger mit
+  Einzel-Entity gueltig; `expand()` akzeptiert String UND Liste). Falls das Feld
+  im Editor nach dem Update leer erscheint: Sensor einmal neu auswaehlen.
+- Warum Liste statt optionaler Einzel-Entity: ein optionaler Einzel-Entity waere
+  bei leerem Feld `entity_id: ""` -> die State-Trigger mmwave_on/off wuerden die
+  Automation beim Laden ungueltig machen. Leere Liste `[]` in einem State-Trigger
+  ist dagegen gueltig (kein Trigger) — derselbe Grund wie bei motion_sensors.
+- Neue Variable `mmwave_active`
+  (`expand(mmwave_sensor)|selectattr('state','eq','on')|list|count>0`). Ersetzt
+  alle bisherigen `is_state(mmwave_sensor,'on')` (activity_active, Einschalt-
+  Aktivitaetsquelle, LIVE-Recheck mmwave_now_on, lux_below-Trigger via expand).
+- Semantik: mind. eine Aktivitaetsquelle (mmWave, Bewegungsmelder oder Tuerkontakt
+  im passenden Modus) muss konfiguriert sein, sonst geht das Licht nie an —
+  in description + README dokumentiert.
+- VERSION 1.3.0 -> 1.4.0. Verifikation lokal: yamllint relaxed (nur Line-Length-
+  Warnings), Schema-Check, Jinja-Compile + Logik-Simulation (mmWave leer / einzeln
+  / Liste; Off-Delay-Recheck).
 
 ---
 

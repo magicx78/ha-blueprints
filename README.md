@@ -111,8 +111,10 @@ Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jeman
 
 **Erfordert: Home Assistant 2024.10.0** (neue `triggers:`/`actions:`-Syntax)
 
+> **Hinweis:** Alle Aktivitätsquellen sind optional, aber **mindestens eine** (mmWave-Sensor, Bewegungsmelder oder Türkontakt im passenden Türmodus) muss konfiguriert sein, sonst geht das Licht nie automatisch an.
+
 **Features:**
-- mmWave-Präsenzsensor als Trigger (Ein/Aus)
+- **Optionale mmWave-Präsenzsensoren** (Mehrfachauswahl) als Trigger (Ein/Aus)
 - **Optionale Bewegungsmelder** (motion/occupancy, Mehrfachauswahl) als zusätzliche Aktivitätsquelle
 - **Optionale Türkontakte** (door/opening/window) mit Türmodus: ignorieren / Öffnung schaltet ein / offen hält Licht an
 - Anwesenheitsprüfung (Person / Gruppe / Helper)

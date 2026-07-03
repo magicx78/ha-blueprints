@@ -1,12 +1,16 @@
-# mmwave_light.yaml — Version 1.3.0 (2026-07-03)
+# mmwave_light.yaml — Version 1.4.0 (2026-07-03)
 blueprint:
   name: Blueprint mmWave Licht mit Lux, Anwesenheit, Timer und Bypass
   description: >
-    Version 1.3.0 (2026-07-03) — mmWave + optionale Bewegungsmelder & Tuerkontakte.
+    Version 1.4.0 (2026-07-03) — mmWave, Bewegungsmelder & Tuerkontakte alle optional.
 
-    Lichtsteuerung mit mmWave-Praesenzsensor, optionalen Bewegungsmeldern und
-    Tuerkontakten, Luxwert, Anwesenheit, Ausschalt-Timer, Bypass und Sofort-An
-    ohne Timer.
+    Lichtsteuerung mit optionalem mmWave-Praesenzsensor, optionalen
+    Bewegungsmeldern und Tuerkontakten, Luxwert, Anwesenheit, Ausschalt-Timer,
+    Bypass und Sofort-An ohne Timer.
+
+    Mindestens EINE Aktivitaetsquelle (mmWave-Sensor, Bewegungsmelder oder
+    Tuerkontakt im passenden Tuermodus) muss konfiguriert sein, sonst geht das
+    Licht nie automatisch an.
 
     Das Licht schaltet nur ein, wenn jemand anwesend ist und es dunkel genug
     ist (Lux <= Schwellwert). Ueber den Sofort-An-Helfer kann das Licht
@@ -14,10 +18,18 @@ blueprint:
     Ausschalten ausgenommen werden. Ein Bypass-Helfer deaktiviert die
     Automation komplett.
 
-    Optionale Eingaben (Bewegungsmelder, Tuerkontakte, Bypass-Helfer,
-    Sofort-An-Helfer, Luxsensor) koennen leer bleiben; dann verhaelt sich die
-    Automation exakt wie ohne sie. Es gilt immer nur explizit 'on' als aktiv;
-    fehlende/leere/unknown/unavailable Entities blockieren nichts.
+    Optionale Eingaben (mmWave-Sensor, Bewegungsmelder, Tuerkontakte,
+    Bypass-Helfer, Sofort-An-Helfer, Luxsensor) koennen leer bleiben; dann
+    verhaelt sich die Automation exakt wie ohne sie. Es gilt immer nur explizit
+    'on' als aktiv; fehlende/leere/unknown/unavailable Entities blockieren nichts.
+
+    Neu in 1.4.0:
+    - mmWave-Praesenzsensor ist jetzt optional und als Mehrfachauswahl
+      umgesetzt (default []); leer lassen moeglich, wenn die Aktivitaet nur
+      ueber Bewegungsmelder und/oder Tuerkontakte kommt. Bestehende Automationen
+      mit einem einzelnen mmWave-Sensor funktionieren unveraendert weiter; falls
+      das Feld im Editor nach dem Update leer erscheint, den Sensor einmal neu
+      auswaehlen.
 
     Neu in 1.3.0:
     - Lux-Trigger: sinkt die Helligkeit unter den Schwellwert, waehrend der
@@ -71,10 +83,19 @@ blueprint:
 
   input:
     mmwave_sensor:
-      name: mmWave Präsenzsensor
-      description: Binary Sensor des mmWave-/Präsenzmelders.
+      name: mmWave Präsenzsensor(en) (optional)
+      description: >
+        Optional. Binary Sensor(en) des mmWave-/Präsenzmelders (Mehrfachauswahl).
+        Zählen als Aktivität und verhindern das Ausschalten, solange mindestens
+        einer 'on' ist. Leer lassen, wenn kein mmWave-Sensor genutzt wird — dann
+        muss aber mindestens eine andere Aktivitätsquelle (Bewegungsmelder oder
+        Türkontakt im passenden Türmodus) konfiguriert sein, sonst geht das Licht
+        nie automatisch an. Ein bereits konfigurierter einzelner Sensor bleibt
+        gültig.
+      default: []
       selector:
         entity:
+          multiple: true
           domain: binary_sensor
 
     motion_sensors:
@@ -227,11 +248,15 @@ variables:
     {{ expand(instant_on_helper) | selectattr('state', 'eq', 'on') | list | count > 0 }}
   motion_active: >
     {{ expand(motion_sensors) | selectattr('state', 'eq', 'on') | list | count > 0 }}
+  # mmWave optional (Liste ODER – aus Alt-Configs – einzelne Entity). expand()
+  # akzeptiert beides; leere Liste / leer -> count 0 -> nicht aktiv.
+  mmwave_active: >
+    {{ expand(mmwave_sensor) | selectattr('state', 'eq', 'on') | list | count > 0 }}
   door_open: >
     {{ door_mode != 'none'
        and (expand(door_sensors) | selectattr('state', 'eq', 'on') | list | count > 0) }}
   activity_active: >
-    {{ is_state(mmwave_sensor, 'on')
+    {{ mmwave_active
        or motion_active
        or (door_mode == 'hold_while_open' and door_open) }}
   # Luxpruefung (Snapshot). True = "hell genug bzw. Pruefung aus" -> Einschalten erlaubt.
@@ -251,7 +276,7 @@ trigger_variables:
   tv_mmwave_sensor: !input mmwave_sensor
 
 triggers:
-  # mmWave-Praesenz (Pflicht)
+  # mmWave-Praesenz (optional; leere Liste => kein Trigger)
   - trigger: state
     entity_id: !input mmwave_sensor
     to: "on"
@@ -267,16 +292,18 @@ triggers:
   # Trigger auf den optionalen Luxsensor bei leerem Feld (entity_id "") die
   # Automation kaputt machen wuerde. Feuert nur beim Uebergang false->true.
   # Bedingungen: Luxsensor gesetzt + gueltiger Wert, Schwelle > 0, Wert <=
-  # Schwelle UND mmWave on. Die mmWave-on-Bedingung sorgt dafuer, dass der
-  # Trigger waehrend eines laufenden Ausschalt-Delays (mmWave off) NICHT feuert
-  # und diesen somit nicht per restart abbricht.
+  # Schwelle UND mindestens ein mmWave-Sensor on. Die mmWave-on-Bedingung sorgt
+  # dafuer, dass der Trigger waehrend eines laufenden Ausschalt-Delays (mmWave
+  # off) NICHT feuert und diesen somit nicht per restart abbricht. Ohne
+  # mmWave-Sensor (leere Liste) feuert dieser Trigger nie.
   - trigger: template
     value_template: >
       {{ tv_lux_threshold | float(0) > 0
          and tv_lux_sensor not in [none, '', 'unknown', 'unavailable']
          and states(tv_lux_sensor) not in ['unknown', 'unavailable', '', 'none']
          and states(tv_lux_sensor) | float(9999) <= tv_lux_threshold | float(0)
-         and is_state(tv_mmwave_sensor, 'on') }}
+         and (expand(tv_mmwave_sensor) | selectattr('state', 'eq', 'on')
+              | list | count > 0) }}
     id: lux_below
 
   # Bewegungsmelder (optional; leere Liste => kein Trigger)
@@ -381,7 +408,7 @@ actions:
           - condition: template
             value_template: >
               {{ trigger.id == 'instant_on'
-                 or is_state(mmwave_sensor, 'on')
+                 or mmwave_active
                  or motion_active
                  or (door_mode in ['trigger_on_open', 'hold_while_open']
                      and trigger.id == 'door_open') }}
@@ -416,7 +443,8 @@ actions:
                 {{ expand(bypass_helper) | selectattr('state', 'eq', 'on') | list | count > 0 }}
               instant_now: >
                 {{ expand(instant_on_helper) | selectattr('state', 'eq', 'on') | list | count > 0 }}
-              mmwave_now_on: "{{ is_state(mmwave_sensor, 'on') }}"
+              mmwave_now_on: >
+                {{ expand(mmwave_sensor) | selectattr('state', 'eq', 'on') | list | count > 0 }}
               motion_now: >
                 {{ expand(motion_sensors) | selectattr('state', 'eq', 'on') | list | count > 0 }}
               door_hold_now: >
