@@ -117,6 +117,7 @@ Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jeman
 - **Optionale Türkontakte** (door/opening/window) mit Türmodus: ignorieren / Öffnung schaltet ein / offen hält Licht an
 - Anwesenheitsprüfung (Person / Gruppe / Helper)
 - Dämmerungsprüfung über Lux-Schwellwert – **Wert `0` deaktiviert die Luxprüfung**; ein leerer / `unknown` / `unavailable` Luxsensor deaktiviert sie automatisch (Licht funktioniert weiter)
+- **Lux-Trigger:** sinkt die Helligkeit unter den Schwellwert, während der mmWave-Sensor bereits Präsenz meldet, schaltet das Licht automatisch ein (auch ohne neues Bewegungsevent)
 - Konfigurierbare Ausschaltverzögerung nach Wegfall der Präsenz
 - Sofort-An ohne Timer (Helfer): sofort ein (ignoriert Lux + Anwesenheit), kein Auto-Aus
 - Bypass-Helfer deaktiviert die Automation komplett (Ein und Aus)

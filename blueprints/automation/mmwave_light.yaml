@@ -1,8 +1,8 @@
-# mmwave_light.yaml — Version 1.2.0 (2026-07-03)
+# mmwave_light.yaml — Version 1.3.0 (2026-07-03)
 blueprint:
   name: Blueprint mmWave Licht mit Lux, Anwesenheit, Timer und Bypass
   description: >
-    Version 1.2.0 (2026-07-03) — mmWave + optionale Bewegungsmelder & Tuerkontakte.
+    Version 1.3.0 (2026-07-03) — mmWave + optionale Bewegungsmelder & Tuerkontakte.
 
     Lichtsteuerung mit mmWave-Praesenzsensor, optionalen Bewegungsmeldern und
     Tuerkontakten, Luxwert, Anwesenheit, Ausschalt-Timer, Bypass und Sofort-An
@@ -18,6 +18,14 @@ blueprint:
     Sofort-An-Helfer, Luxsensor) koennen leer bleiben; dann verhaelt sich die
     Automation exakt wie ohne sie. Es gilt immer nur explizit 'on' als aktiv;
     fehlende/leere/unknown/unavailable Entities blockieren nichts.
+
+    Neu in 1.3.0:
+    - Lux-Trigger: sinkt die Helligkeit unter den Schwellwert, waehrend der
+      mmWave-Sensor bereits 'on' ist (stehende Praesenz, aber kein neues
+      Bewegungsevent), schaltet das Licht jetzt automatisch ein. Damit geht
+      das Licht bei Daemmerung auch dann an, wenn sich niemand bewegt. Der
+      Trigger ist nur aktiv, wenn ein Luxsensor gesetzt und der Daemmerungswert
+      groesser 0 ist; er beeinflusst laufende Ausschalt-Timer nicht.
 
     Neu in 1.2.0:
     - Lux-Robustheit: ein leerer oder unknown/unavailable Luxsensor deaktiviert
@@ -234,6 +242,14 @@ variables:
        or states(lux_sensor) in ['unknown', 'unavailable', '', 'none']
        or states(lux_sensor) | float(9999) <= lux_threshold | float(0) }}
 
+# trigger_variables werden – anders als variables: – bereits zur Trigger-Zeit
+# gerendert und sind im Template-Trigger unten verfuegbar (variables: sind es
+# NICHT). Nur fuer den Lux-Trigger noetig.
+trigger_variables:
+  tv_lux_sensor: !input lux_sensor
+  tv_lux_threshold: !input lux_threshold
+  tv_mmwave_sensor: !input mmwave_sensor
+
 triggers:
   # mmWave-Praesenz (Pflicht)
   - trigger: state
@@ -244,6 +260,24 @@ triggers:
     entity_id: !input mmwave_sensor
     to: "off"
     id: mmwave_off
+
+  # Lux faellt unter Schwelle, WAEHREND mmWave bereits 'on' ist.
+  # Zweck: bei Daemmerung einschalten, auch wenn kein neues Bewegungsevent kommt
+  # (stehende Praesenz). Als Template-Trigger umgesetzt, weil ein numeric_state-
+  # Trigger auf den optionalen Luxsensor bei leerem Feld (entity_id "") die
+  # Automation kaputt machen wuerde. Feuert nur beim Uebergang false->true.
+  # Bedingungen: Luxsensor gesetzt + gueltiger Wert, Schwelle > 0, Wert <=
+  # Schwelle UND mmWave on. Die mmWave-on-Bedingung sorgt dafuer, dass der
+  # Trigger waehrend eines laufenden Ausschalt-Delays (mmWave off) NICHT feuert
+  # und diesen somit nicht per restart abbricht.
+  - trigger: template
+    value_template: >
+      {{ tv_lux_threshold | float(0) > 0
+         and tv_lux_sensor not in [none, '', 'unknown', 'unavailable']
+         and states(tv_lux_sensor) not in ['unknown', 'unavailable', '', 'none']
+         and states(tv_lux_sensor) | float(9999) <= tv_lux_threshold | float(0)
+         and is_state(tv_mmwave_sensor, 'on') }}
+    id: lux_below
 
   # Bewegungsmelder (optional; leere Liste => kein Trigger)
   - trigger: state
@@ -327,7 +361,8 @@ actions:
       # ============================================================
       # EINSCHALTEN
       # Quellen: mmWave on, Bewegungsmelder on, Sofort-An on,
-      # oder Tueroeffnung (wenn Tuermodus dies erlaubt).
+      # Tueroeffnung (wenn Tuermodus dies erlaubt) oder Lux faellt unter
+      # Schwelle bei stehender mmWave-Praesenz (lux_below).
       # ============================================================
       - conditions:
           - condition: trigger
@@ -336,6 +371,7 @@ actions:
               - motion_on
               - instant_on
               - door_open
+              - lux_below
           # Anwesenheit (Sofort-An ignoriert Anwesenheit)
           - condition: template
             value_template: >

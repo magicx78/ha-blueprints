@@ -15,13 +15,40 @@ validieren und auf GitHub veröffentlichen.
 | Tuer offen Alarm Pro v4 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | author nachgetragen; min_version 2024.10.0 war bereits vorhanden |
 | Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
 | GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
-| Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung beim Ausschalten; activity_active-DRY; Name-Typo "Bluepoint" behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte (door_mode none/trigger_on_open/hold_while_open); Bypass/Sofort-An/Luxsensor optional |
+| Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung beim Ausschalten; activity_active-DRY; Name-Typo "Bluepoint" behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte (door_mode none/trigger_on_open/hold_while_open); Bypass/Sofort-An/Luxsensor optional |
 
 **Status-Legende:**
 - in Entwicklung
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-07-03 (v1.3.0: Lux-Trigger)
+
+Follow-up aus dem v1.2.0-Review umgesetzt: das Licht ging bislang bei sinkender
+Helligkeit NICHT an, wenn der mmWave-Sensor bereits 'on' war (stehende Praesenz
+ohne neues Bewegungsevent). Behoben mit einem neuen Lux-Trigger:
+
+- Neuer Template-Trigger id=lux_below. Feuert beim Uebergang false->true, wenn:
+  Luxsensor gesetzt + gueltiger Wert, Schwelle > 0, Lux <= Schwelle UND mmWave on.
+- Bewusst KEIN numeric_state-Trigger: der Luxsensor ist optional (default ""),
+  ein numeric_state-Trigger mit entity_id "" wuerde die Automation beim Laden
+  ungueltig machen. Ein Template-Trigger behandelt leere/unknown/unavailable
+  Sensoren sauber (Ausdruck bleibt einfach false).
+- Neuer Top-Level-Block trigger_variables (tv_lux_sensor/tv_lux_threshold/
+  tv_mmwave_sensor), da automations-`variables:` in Triggern NICHT verfuegbar
+  sind, `trigger_variables:` aber schon.
+- Die mmWave-on-Klausel im Trigger verhindert, dass lux_below waehrend eines
+  laufenden Ausschalt-Delays (mmWave off) feuert und diesen per mode:restart
+  abbricht.
+- lux_below in die Trigger-Liste des Einschalt-Zweigs aufgenommen; die
+  bestehenden Bedingungen (Anwesenheit, Aktivitaetsquelle=mmWave on, lux_ok)
+  greifen unveraendert und gaten den neuen Trigger korrekt.
+- VERSION 1.2.0 -> 1.3.0 (loest Release v1.3.0 aus); README/description ergaenzt.
+- Verifikation lokal: yamllint relaxed (nur Line-Length-Warnings), Schema-Check,
+  Jinja-Compile der Trigger-/Condition-Templates.
 
 ---
 
