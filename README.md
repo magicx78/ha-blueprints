@@ -150,6 +150,26 @@ Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jeman
 
 ---
 
+### Entity Watchdog — Ausfall-Benachrichtigung (Sensoren, Kontakte, Lichter)
+
+Überwacht beliebige Entities (mmWave-/Bewegungs-/Türsensoren, Lichter, Schalter …) auf Ausfall (`unavailable`/`unknown`) und schickt eine Benachrichtigung mit Handlungs-Hinweis an ein oder mehrere Handys (HA Companion App) und/oder als persistente Benachrichtigung in HA. Gedacht als Begleiter zu den Licht-Blueprints (mmWave Licht, Presence & Light): fällt ein Sensor aus, werten die Licht-Automationen ihn als „keine Präsenz" — der Watchdog sagt rechtzeitig Bescheid, was los ist und was zu tun ist (z. B. Bypass aktivieren, Licht manuell schalten).
+
+**Erfordert: Home Assistant 2024.10.0** (neue `triggers:`/`actions:`-Syntax)
+
+**Features:**
+- **Ausfall-Verzögerung einstellbar:** `0` = sofortige Meldung; z. B. 5 min = erst melden, wenn die Entity durchgehend so lange ausgefallen ist (kurze WLAN-Reconnects lösen keine Meldung aus)
+- **Mehrere Ziel-Handys** wählbar (Companion App, Geräteauswahl); zusätzlich optionale persistente Benachrichtigung in HA
+- **Entwarnung** bei Wiederverfügbarkeit (optional, Standard an) — kommt nur, wenn der Ausfall vorher wirklich gemeldet wurde; ersetzt die Ausfall-Meldung auf dem Handy (Push-`tag`) und entfernt die persistente Benachrichtigung
+- **Fehlertolerant:** jede Zustellung läuft mit `continue_on_error` — ein nicht erreichbares Handy stoppt weder die übrigen Zustellungen noch die Automation; `mode: queued` verarbeitet mehrere gleichzeitige Ausfälle nacheinander
+- **Handlungs-Hinweis anpassbar** (Freitext mit sinnvollem Default)
+- Bewusst als **separate Automation** statt in die Licht-Blueprints integriert: ein Fehler im Watchdog kann die Lichtsteuerung nie blockieren
+
+> **Hinweis:** Der notify-Dienst wird aus dem Gerätenamen abgeleitet (`notify.mobile_app_<geraetename>`). Wurde das Gerät in HA umbenannt, der notify-Dienst aber nicht, den Original-Namen prüfen (Entwicklerwerkzeuge → Aktionen).
+
+[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://raw.githubusercontent.com/magicx78/ha-blueprints/main/blueprints/automation/entity_watchdog.yaml)
+
+---
+
 ## Installation
 
 1. Auf den "Import Blueprint" Button des gewünschten Blueprints klicken.
@@ -170,6 +190,7 @@ Bei Blueprints mit Voraussetzungen (Log Viewer, GrowWarn) zuerst die beschrieben
 | Automation Log Viewer | 2024.6.0 |
 | GrowWarn | 2024.6.0 |
 | Blueprint mmWave Licht | 2024.10.0 |
+| Entity Watchdog | 2024.10.0 |
 
 ---
 

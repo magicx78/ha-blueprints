@@ -1,0 +1,244 @@
+# entity_watchdog.yaml — Version 1.0.0 (2026-07-18)
+blueprint:
+  name: Entity Watchdog — Ausfall-Benachrichtigung (Sensoren, Kontakte, Lichter)
+  description: >
+    Version 1.0.0 (2026-07-18) — Ueberwacht beliebige Entities (mmWave-/
+    Bewegungs-/Tuersensoren, Lichter, Schalter, ...) auf Ausfall
+    (unavailable/unknown) und schickt eine Benachrichtigung mit Handlungs-
+    Hinweis an ein oder mehrere Handys (HA Companion App) und/oder als
+    persistente Benachrichtigung in Home Assistant.
+
+    Gedacht als Begleiter zu Licht-Automationen (z. B. mmwave_light,
+    presence_light): faellt ein Sensor aus, wertet die Licht-Automation ihn
+    als "keine Praesenz" — dieses Blueprint sagt dir rechtzeitig Bescheid,
+    was los ist und wie du damit umgehst (z. B. Bypass aktivieren, Licht
+    manuell schalten).
+
+    Eigenschaften:
+    - Ausfall-Verzoegerung einstellbar: 0 = sofortige Meldung, z. B. 5 min =
+      erst melden, wenn die Entity durchgehend so lange ausgefallen ist
+      (kurze WLAN-Reconnects loesen dann keine Meldung aus).
+    - Mehrfachauswahl der Ziel-Handys (Companion App); zusaetzlich optional
+      persistente Benachrichtigung in HA (Standard: an).
+    - Optionale Entwarnung, wenn die Entity wieder verfuegbar ist
+      (Standard: an). Entwarnung kommt nur, wenn vorher wirklich gemeldet
+      wurde (Ausfall war laenger als die Verzoegerung).
+    - Fehlertolerant: jede Zustellung laeuft mit continue_on_error — ein
+      nicht erreichbares Handy oder ein fehlender notify-Dienst stoppt
+      weder die uebrigen Zustellungen noch die Automation. mode: queued
+      verarbeitet mehrere gleichzeitige Ausfaelle nacheinander statt sich
+      gegenseitig abzubrechen.
+    - Bewusst als SEPARATE Automation umgesetzt (nicht in die Licht-
+      Blueprints integriert): ein Fehler im Watchdog kann die
+      Lichtsteuerung nie blockieren, und die Watchdog-Trigger koennen
+      keine laufenden Ausschalt-Timer der Licht-Automationen abbrechen.
+
+    Hinweise:
+    - Der notify-Dienst wird aus dem Geraetenamen abgeleitet
+      (notify.mobile_app_<geraetename>). Wurde das Geraet in HA umbenannt,
+      der notify-Dienst aber nicht, bitte den Original-Namen pruefen
+      (Entwicklerwerkzeuge -> Aktionen -> "notify.mobile_app_...").
+    - Push-Meldungen nutzen ein tag pro Entity: die Entwarnung ersetzt die
+      Ausfall-Meldung auf dem Handy; die persistente Benachrichtigung wird
+      bei Entwarnung automatisch entfernt.
+  domain: automation
+  author: "magicx78"
+  source_url: https://raw.githubusercontent.com/magicx78/ha-blueprints/main/blueprints/automation/entity_watchdog.yaml
+  homeassistant:
+    min_version: "2024.10.0"
+
+  input:
+    watch_entities:
+      name: Überwachte Entities
+      description: >
+        Entities, die auf Ausfall (unavailable/unknown) überwacht werden —
+        z. B. mmWave-Sensoren, Bewegungsmelder, Türkontakte, Lichter.
+        Mehrfachauswahl.
+      selector:
+        entity:
+          multiple: true
+
+    fail_delay:
+      name: Ausfall-Verzögerung
+      description: >
+        So lange muss eine Entity DURCHGEHEND ausgefallen sein, bevor
+        gemeldet wird. 0 = sofortige Benachrichtigung. Empfehlung: 5 Minuten,
+        damit kurze WLAN-Reconnects keine Meldung auslösen.
+      default:
+        minutes: 5
+      selector:
+        duration:
+
+    notify_devices:
+      name: Handy(s) für die Benachrichtigung (optional)
+      description: >
+        Geräte mit Home Assistant Companion App (Mehrfachauswahl). Leer
+        lassen, wenn nur die persistente Benachrichtigung in HA gewünscht
+        ist.
+      default: []
+      selector:
+        device:
+          multiple: true
+          filter:
+            - integration: mobile_app
+
+    persistent_note:
+      name: Persistente Benachrichtigung in HA
+      description: >
+        Zeigt die Meldung zusätzlich als Benachrichtigung in der
+        HA-Oberfläche an; wird bei Entwarnung automatisch entfernt.
+      default: true
+      selector:
+        boolean:
+
+    notify_on_recovery:
+      name: Entwarnung senden
+      description: >
+        Meldung, wenn die Entity wieder verfügbar ist. Kommt nur, wenn der
+        Ausfall vorher gemeldet wurde (länger als die Ausfall-Verzögerung).
+      default: true
+      selector:
+        boolean:
+
+    guidance_text:
+      name: Handlungs-Hinweis
+      description: >
+        Wird an die Ausfall-Meldung angehängt — was ist mit Licht und
+        Automation zu tun, solange die Entity ausgefallen ist?
+      default: >-
+        Die Licht-Automation wertet diese Entity jetzt als "keine
+        Präsenz/Aktivität" — das Licht kann dadurch ausgehen oder nicht mehr
+        automatisch angehen. Bei Bedarf: Licht manuell schalten oder den
+        Bypass-Helfer des Raums aktivieren, bis das Gerät wieder online ist.
+      selector:
+        text:
+          multiline: true
+
+# queued statt restart/single: mehrere gleichzeitige Ausfaelle (z. B.
+# WLAN-Ausfall trifft mehrere Geraete) werden nacheinander gemeldet und
+# brechen sich nicht gegenseitig ab.
+mode: queued
+max: 20
+
+variables:
+  notify_devices: !input notify_devices
+  persistent_note: !input persistent_note
+  notify_on_recovery: !input notify_on_recovery
+  guidance_text: !input guidance_text
+  fail_delay: !input fail_delay
+  # Verzoegerung in Sekunden — gebraucht fuer die Entwarnung: nur melden,
+  # wenn der Ausfall lang genug war, dass vorher eine Meldung rausging.
+  fail_seconds: >
+    {{ (fail_delay.days | default(0)) * 86400
+       + (fail_delay.hours | default(0)) * 3600
+       + (fail_delay.minutes | default(0)) * 60
+       + (fail_delay.seconds | default(0)) }}
+
+triggers:
+  # Ausfall: Entity ist seit fail_delay durchgehend unavailable/unknown.
+  # Der 'for'-Timer startet bei jedem Zustandswechsel neu — kurze
+  # Reconnects unterhalb der Verzoegerung loesen nichts aus.
+  - trigger: state
+    entity_id: !input watch_entities
+    to:
+      - "unavailable"
+      - "unknown"
+    for: !input fail_delay
+    id: failed
+
+  # Entwarnung: Entity kommt aus unavailable/unknown in einen gueltigen
+  # Zustand zurueck.
+  - trigger: state
+    entity_id: !input watch_entities
+    from:
+      - "unavailable"
+      - "unknown"
+    not_to:
+      - "unavailable"
+      - "unknown"
+    id: recovered
+
+conditions: []
+
+actions:
+  - choose:
+      # ============================================================
+      # AUSFALL -> Meldung an Handys + optional persistent
+      # ============================================================
+      - conditions:
+          - condition: trigger
+            id: failed
+        sequence:
+          - variables:
+              fail_minutes: >
+                {{ ((now() - trigger.to_state.last_changed).total_seconds()
+                    / 60) | round(0, 'ceil') }}
+              msg_title: "⚠️ {{ trigger.to_state.name }} ausgefallen"
+              msg_text: >-
+                {{ trigger.to_state.name }} ({{ trigger.entity_id }}) ist seit
+                ca. {{ fail_minutes }} min nicht verfügbar
+                (Status: {{ trigger.to_state.state }}). {{ guidance_text }}
+          - repeat:
+              for_each: "{{ notify_devices }}"
+              sequence:
+                - action: >-
+                    notify.mobile_app_{{ device_attr(repeat.item, 'name')
+                    | slugify }}
+                  continue_on_error: true
+                  data:
+                    title: "{{ msg_title }}"
+                    message: "{{ msg_text }}"
+                    data:
+                      tag: "watchdog-{{ trigger.entity_id }}"
+          - if:
+              - condition: template
+                value_template: "{{ persistent_note }}"
+            then:
+              - action: persistent_notification.create
+                continue_on_error: true
+                data:
+                  notification_id: "watchdog_{{ trigger.entity_id }}"
+                  title: "{{ msg_title }}"
+                  message: "{{ msg_text }}"
+
+      # ============================================================
+      # ENTWARNUNG -> nur wenn der Ausfall vorher gemeldet wurde
+      # (Dauer >= fail_delay). Persistente Meldung wird entfernt.
+      # ============================================================
+      - conditions:
+          - condition: trigger
+            id: recovered
+          - condition: template
+            value_template: >
+              {{ (now() - trigger.from_state.last_changed).total_seconds()
+                 >= fail_seconds | float(0) }}
+        sequence:
+          - variables:
+              outage_minutes: >
+                {{ ((now() - trigger.from_state.last_changed).total_seconds()
+                    / 60) | round(0, 'ceil') }}
+              msg_title: "✅ {{ trigger.to_state.name }} wieder verfügbar"
+              msg_text: >-
+                {{ trigger.to_state.name }} ({{ trigger.entity_id }}) ist
+                wieder verfügbar (war ca. {{ outage_minutes }} min
+                ausgefallen). Die Automationen arbeiten wieder normal.
+          - action: persistent_notification.dismiss
+            continue_on_error: true
+            data:
+              notification_id: "watchdog_{{ trigger.entity_id }}"
+          - if:
+              - condition: template
+                value_template: "{{ notify_on_recovery }}"
+            then:
+              - repeat:
+                  for_each: "{{ notify_devices }}"
+                  sequence:
+                    - action: >-
+                        notify.mobile_app_{{ device_attr(repeat.item, 'name')
+                        | slugify }}
+                      continue_on_error: true
+                      data:
+                        title: "{{ msg_title }}"
+                        message: "{{ msg_text }}"
+                        data:
+                          tag: "watchdog-{{ trigger.entity_id }}"

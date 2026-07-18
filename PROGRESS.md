@@ -17,11 +17,38 @@ validieren und auf GitHub veröffentlichen.
 | GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
 | Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.5.1: Trigger-Härtung (unavailable→off startet keinen Off-Timer mehr; Garage not_from unknown/unavailable) + Multi-Helper-Fix (bypass_off/instant_off prüfen verbleibende Helfer). v1.5.0: Garagentore (cover + binary_sensor) mit eigenem Garagenmodus. v1.4.0: mmWave-Sensor optional (Mehrfachauswahl, default []); mind. eine Aktivitätsquelle nötig. v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung; activity_active-DRY; Name-Typo behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte; Bypass/Sofort-An/Luxsensor optional |
 
+| Entity Watchdog (Ausfall-Benachrichtigung) | blueprints/automation/entity_watchdog.yaml | automation | valide | v1.0.0: Überwacht beliebige Entities auf unavailable/unknown; einstellbare Ausfall-Verzögerung (Default 5 min, 0 = sofort); Push an mehrere Companion-App-Geräte + optionale persistente HA-Benachrichtigung; Entwarnung nur nach echter Meldung (Dauer ≥ Verzögerung), ersetzt Push per tag und dismisst die persistente Meldung; continue_on_error je Zustellung; mode: queued. Begleiter zu mmwave_light/presence_light |
+
 **Status-Legende:**
 - in Entwicklung
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-07-18 (entity_watchdog v1.0.0: neues Blueprint, Release 1.7.0)
+
+Neues Blueprint entity_watchdog.yaml (Folgeauftrag nach mmwave_light v1.5.1 —
+die Diagnose zeigte regelmaessige Sensor-Ausfaelle als Hauptursache):
+
+- Ueberwacht beliebige Entities auf unavailable/unknown; Trigger `failed` mit
+  `for: !input fail_delay` (Default 5 min, 0 = sofort) — kurze Reconnects
+  unterhalb der Verzoegerung melden nicht.
+- Zustellung an mehrere Companion-App-Geraete (device-Selector, notify-Dienst
+  aus Geraetename via device_attr+slugify) + optionale persistente
+  HA-Benachrichtigung (notification_id pro Entity).
+- Entwarnung (`recovered`) nur wenn Ausfalldauer >= fail_delay (sonst Spam bei
+  kurzen Dropouts); ersetzt Push per tag, dismisst persistente Meldung.
+- Fehlertoleranz: continue_on_error je Zustellaktion; mode: queued (max 20)
+  fuer gleichzeitige Ausfaelle. BEWUSST separates Blueprint statt Integration
+  in mmwave_light: dessen mode:restart wuerde durch Watchdog-Trigger laufende
+  Ausschalt-Timer abbrechen; ausserdem kann ein Watchdog-Fehler so nie die
+  Lichtsteuerung blockieren.
+- README-Abschnitt + Versions-Tabelle; VERSION 1.6.1 -> 1.7.0.
+- In der Produktiv-HA: Blueprint importiert + EINE zentrale Watchdog-Automation
+  fuer die Sensoren/Kontakte/Lichter der 5 Licht-Automationen angelegt
+  (Ziel: iphonemw + iphonecw + persistente Benachrichtigung).
 
 ---
 
