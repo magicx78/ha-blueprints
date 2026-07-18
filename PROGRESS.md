@@ -15,13 +15,44 @@ validieren und auf GitHub veröffentlichen.
 | Tuer offen Alarm Pro v4 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | author nachgetragen; min_version 2024.10.0 war bereits vorhanden |
 | Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
 | GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
-| Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.5.0: Garagentore (cover + binary_sensor) mit eigenem Garagenmodus. v1.4.0: mmWave-Sensor optional (Mehrfachauswahl, default []); mind. eine Aktivitätsquelle nötig. v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung; activity_active-DRY; Name-Typo behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte; Bypass/Sofort-An/Luxsensor optional |
+| Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.5.1: Trigger-Härtung (unavailable→off startet keinen Off-Timer mehr; Garage not_from unknown/unavailable) + Multi-Helper-Fix (bypass_off/instant_off prüfen verbleibende Helfer). v1.5.0: Garagentore (cover + binary_sensor) mit eigenem Garagenmodus. v1.4.0: mmWave-Sensor optional (Mehrfachauswahl, default []); mind. eine Aktivitätsquelle nötig. v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung; activity_active-DRY; Name-Typo behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte; Bypass/Sofort-An/Luxsensor optional |
 
 **Status-Legende:**
 - in Entwicklung
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-07-18 (mmwave_light v1.5.1: Trigger-Haertung, Release 1.6.1)
+
+Symptom "Licht geht manchmal einfach aus" fuer die mmWave-Automationen per
+Live-Diagnose in der Produktiv-HA untersucht (Traces + Sensor-Historie der
+5 Blueprint-Instanzen: Eingang, Kueche, Flur BLE, Lager, Hof):
+
+- Hauptursache liegt auf Sensorebene: die HLK-LD2450-Sensoren verlieren
+  still sitzende Personen (Kueche: Person 8 min "unsichtbar", Licht ging
+  nach 3-min-Timer korrekt aus) und fallen regelmaessig auf unavailable
+  (Kueche ~7x/24h, einmal 74 min offline). Die Blueprint-Logik arbeitete in
+  den geprueften Traces korrekt.
+- Blueprint-Bug A (gefixt): mmwave_off/motion_off-Trigger ohne `from: "on"`
+  feuerten auch bei unavailable->off (Geraete-Reconnect, HA-Neustart) und
+  starteten spurious Off-Timer. Fix: `from: "on"` ergaenzt; Garage-Trigger
+  analog mit `not_from: [unknown, unavailable]` gehaertet.
+- Blueprint-Bug B (gefixt): bei MEHREREN Bypass- bzw. Sofort-An-Helfern
+  reagierte die Automation schon beim Ausschalten EINES Helfers, obwohl ein
+  anderer Helfer derselben Gruppe noch 'on' war. Fix: Zusatzbedingungen
+  `not bypass_active` (bypass_off-Zweig) und `not instant_on_active`
+  (instant_off-Zweig).
+- Nutzer-Entscheidung: unavailable zaehlt im Live-Recheck weiterhin als
+  "keine Praesenz" (kein Fail-Safe-Anlassen) — nur Trigger gehaertet.
+- VERSION 1.6.0 -> 1.6.1 (Repo-Release; Blueprint-interne Version 1.5.1).
+- Offene Empfehlungen (ausserhalb Blueprint): LD2450-Tuning + WLAN-
+  Stabilitaet der ESPHome-Geraete pruefen; off_delay in betroffenen
+  Automationen erhoehen (z. B. Kueche 3 -> 10 min); klaeren, ob
+  automation.hof_licht absichtlich auf die Lager-Sensoren
+  (ble_lager_sensor_*) triggert.
 
 ---
 
