@@ -11,7 +11,7 @@ validieren und auf GitHub veröffentlichen.
 | Blueprint | Datei | Domain | Status | Notizen |
 |-----------|-------|--------|--------|---------|
 | Camera Health (Frigate FPS + Unavailable + Pulse Ping) | blueprints/automation/cam_active.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
-| Presence & Light v2 | blueprints/automation/presence_light.yaml | automation | valide | author + min_version 2024.6.0 + Beschreibung nachgetragen |
+| Presence & Light v2 | blueprints/automation/presence_light.yaml | automation | valide | v2.1.0: Modus-"Deaktiviert"-Fix (Bewegung schaltete ein, hielt aber nicht), Türkontakt-Hold (Opt-in, Modi open/closed, mit Timer-Re-Arm), Tür-Trigger nur noch echte on/off-Übergänge (from/to), Timer-Refresh auch bei Licht an (Dunkelheit gated nur noch das Einschalten), Ausschalten nur bei Licht an, source_url + Versionsheader. Zuvor: author + min_version 2024.6.0 + Beschreibung nachgetragen |
 | Tuer offen Alarm Pro v4 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | author nachgetragen; min_version 2024.10.0 war bereits vorhanden |
 | Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
 | GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
@@ -22,6 +22,56 @@ validieren und auf GitHub veröffentlichen.
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-07-18 (presence_light v2.1.0: Bugfixes + Tuerkontakt-Hold)
+
+Ursache fuer "Licht geht manchmal einfach aus" analysiert und behoben
+(statische Logik-Analyse + Zweit-Review; Blueprint ist in der Test-Instanz
+nicht instanziiert, daher keine Traces):
+
+- B1: Bewegungsmelder-Modus "Deaktiviert" war widerspruechlich — Motion
+  schaltete das Licht ein (active_trigger), hielt es aber nicht
+  (v_is_active ignorierte Motion) -> Licht ging nach Timer-Ablauf trotz
+  Bewegung aus. Fix: neues v_activation_event ignoriert Motion-Events bei
+  Modus 'off' vollstaendig (weder Einschalten noch Timer).
+- B2: v_contact_active war toter Code — Tueren hielten nie. Fix: Opt-in
+  Input `door_contact_hold` (boolean, default false = Alt-Verhalten).
+  Aktiv: Modus 'open' haelt bei offener, Modus 'closed' bei geschlossener
+  Tuer (Bad-Szenario); 'both'/'off' halten NIE (sonst unsterbliches
+  Licht). Endet der Hold, re-armt FALL 2 den Ausschalt-Timer
+  (v_deactivation_event, tuer-seitig nur bei aktivem Hold -> Alt-Timing
+  ohne Hold exakt erhalten).
+- B3: Tuer-Trigger ohne from/to feuerte auch bei unavailable/unknown und
+  reinen Attribut-Updates (Modus "Beides": jede Aenderung = Aktivierung).
+  Fix: zwei Trigger door_open (off->on) und door_closed (on->off);
+  v_contact_event_ok arbeitet nur noch ueber trigger-id + Modus (kein
+  to_state-Zugriff mehr).
+- B4 (Hauptursache fuer "manchmal"): Das Dunkelheits-Gate in FALL 1
+  blockierte auch den Timer-Refresh (Lux-Feedback: Licht macht Raum hell).
+  Der Timer lief dann unbemerkt weiter; traf der Ablauf einen kurzen
+  mmWave-/PIR-Aussetzer, ging das Licht trotz Anwesenheit aus. Fix:
+  FALL-1-Gate ist jetzt `v_any_light_on or v_is_dark` — Refresh laeuft
+  bei brennendem Licht immer, Einschalten bleibt dunkel-gated.
+- B5: FALL 3 schaltet nur noch aus, wenn mind. ein Ziel-Licht an ist
+  (fremde/verwaiste timer.finished = No-Op). Doku-Hinweise ergaenzt:
+  Timer-Helfer pro Automation dediziert + restore aktivieren;
+  unknown/unavailable zaehlt als inaktiv; manuelle Lichter werden
+  uebernommen -> Sperr-Schalter nutzen.
+- B6: source_url ergaenzt (Re-Import-Updates jetzt moeglich),
+  Versionsheader + Changelog in der description.
+- Intern: Trigger-IDs umbenannt (motion_on/motion_off, presence_on/
+  presence_off, door_open/door_closed, timer_finished); v_trigger_id mit
+  trigger-is-defined-Guard macht manuelle Ausfuehrung zum sauberen No-Op.
+  Keine Input-Keys geaendert — Bestandsautomationen laufen nach Re-Import
+  unveraendert (door_contact_hold default false).
+- README (Features + Wichtig-Block) und VERSION 1.5.0 -> 1.6.0.
+- Verifikation lokal: yamllint relaxed, CI-Schema-Check, Jinja2-Simulation
+  der echten Templates (9216 Faelle: Modus x Kontaktmodus x Hold x Event x
+  Licht x Dunkel x Sensorzustaende inkl. unavailable; Invarianten I1-I10)
+  + 4 End-to-End-Regressionsstories (B1, B2 open, B2 closed/Bad, B4) +
+  statische Trigger-Checks (from/to, IDs, genau ein timer.start je Fall).
 
 ---
 

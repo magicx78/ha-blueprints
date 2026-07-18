@@ -24,14 +24,22 @@ Meldet Kamera- und Stream-Ausfälle über drei unabhängige Signale: die Kamera-
 
 ### Presence & Light v2 – Motion/Presence + Türkontakt + Timer + Dämmerung + Schalter
 
-Anwesenheits- und bewegungsbasierte Lichtsteuerung. Unterstützt Bewegungsmelder, Präsenz-Sensoren, Türkontakte, Timer-Helfer, Dämmerungsprüfung (Lux und/oder Sonnenstand) sowie einen Sperr-Schalter. Das Licht schaltet sich bei Aktivität ein und nach Ablauf des Timers automatisch aus. Hinweis: Fehlt der Lux-Sensor oder liefert er unknown/unavailable, gilt dies als „dunkel“, damit die Automation weiter funktioniert.
+Anwesenheits- und bewegungsbasierte Lichtsteuerung. Unterstützt Bewegungsmelder, Präsenz-Sensoren, Türkontakte, Timer-Helfer, Dämmerungsprüfung (Lux und/oder Sonnenstand) sowie einen Sperr-Schalter. Das Licht schaltet sich bei Aktivität ein und nach Ablauf des Timers automatisch aus. Hinweis: Fehlt der Lux-Sensor oder liefert er unknown/unavailable, gilt dies als „dunkel“, damit die Automation weiter funktioniert. Neu in v2.1.0: Türkontakt-Hold (Opt-in), robuste Türkontakt-Trigger (nur echte offen/zu-Übergänge), Timer-Refresh auch bei bereits eingeschaltetem Licht sowie ein vollständig ignorierender Bewegungsmelder-Modus „Deaktiviert“ — behebt „Licht geht trotz Anwesenheit einfach aus“.
 
 **Features:**
 - Bewegungsmelder und Präsenz-Sensoren kombinierbar
 - Türkontakt als zusätzlicher Trigger
-- Dämmerungsprüfung via Lux-Sensor oder Sonnenstand
+- **Türkontakt-Hold (Opt-in):** offene Tür (Modus „Offen“) bzw. geschlossene Tür (Modus „Zu“, z. B. Badezimmer) hält das Licht an; endet das Halten, startet der Ausschalt-Timer neu
+- Robuste Türkontakt-Trigger: `unavailable`/`unknown` und reine Attribut-Updates lösen nichts mehr aus
+- Dämmerungsprüfung via Lux-Sensor oder Sonnenstand (gilt nur fürs Einschalten — Aktivität verlängert den Timer auch, wenn es inzwischen hell ist)
 - Sperr-Schalter zum manuellen Deaktivieren
 - Helligkeit und Übergangszeiten konfigurierbar
+
+> **Wichtig:**
+> - Den Timer-Helfer **pro Automation dediziert** anlegen (nicht mit anderen Räumen/Automationen teilen), sonst schalten fremde Timer-Abläufe das Licht unerwartet aus. Am Timer „Wiederherstellen“ (restore) aktivieren, damit ein HA-Neustart laufende Timer nicht verschluckt.
+> - Es zählen nur explizite Zustände: Sensoren auf `unknown`/`unavailable` gelten beim Timer-Ablauf als inaktiv.
+> - Manuell eingeschaltete Lichter werden von der Ausschalt-Logik übernommen — dauerhaft manuelles Licht über den Sperr-Schalter absichern.
+> - Der Hold wirkt nur in den Türkontakt-Modi „Offen“ und „Zu“, nie bei „Beides“.
 
 [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://raw.githubusercontent.com/magicx78/ha-blueprints/main/blueprints/automation/presence_light.yaml)
 
