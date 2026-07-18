@@ -15,7 +15,7 @@ validieren und auf GitHub veröffentlichen.
 | Tuer offen Alarm Pro v4 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | author nachgetragen; min_version 2024.10.0 war bereits vorhanden |
 | Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
 | GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
-| Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.5.1: Trigger-Härtung (unavailable→off startet keinen Off-Timer mehr; Garage not_from unknown/unavailable) + Multi-Helper-Fix (bypass_off/instant_off prüfen verbleibende Helfer). v1.5.0: Garagentore (cover + binary_sensor) mit eigenem Garagenmodus. v1.4.0: mmWave-Sensor optional (Mehrfachauswahl, default []); mind. eine Aktivitätsquelle nötig. v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung; activity_active-DRY; Name-Typo behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte; Bypass/Sofort-An/Luxsensor optional |
+| Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.6.0: Dämmerungs-Binärsensor(en) als neue optionale Dunkelheitsquelle (Mehrfachauswahl, `on` = dunkel, ODER-verknüpft mit Lux; darkness_on-Trigger analog lux_below; Hellwerden schaltet nie aktiv aus). v1.5.1: Trigger-Härtung (unavailable→off startet keinen Off-Timer mehr; Garage not_from unknown/unavailable) + Multi-Helper-Fix (bypass_off/instant_off prüfen verbleibende Helfer). v1.5.0: Garagentore (cover + binary_sensor) mit eigenem Garagenmodus. v1.4.0: mmWave-Sensor optional (Mehrfachauswahl, default []); mind. eine Aktivitätsquelle nötig. v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung; activity_active-DRY; Name-Typo behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte; Bypass/Sofort-An/Luxsensor optional |
 
 | Entity Watchdog (Ausfall-Benachrichtigung) | blueprints/automation/entity_watchdog.yaml | automation | valide | v1.0.0: Überwacht beliebige Entities auf unavailable/unknown; einstellbare Ausfall-Verzögerung (Default 5 min, 0 = sofort); Push an mehrere Companion-App-Geräte + optionale persistente HA-Benachrichtigung; Entwarnung nur nach echter Meldung (Dauer ≥ Verzögerung), ersetzt Push per tag und dismisst die persistente Meldung; continue_on_error je Zustellung; mode: queued. Begleiter zu mmwave_light/presence_light |
 
@@ -24,6 +24,29 @@ validieren und auf GitHub veröffentlichen.
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-07-18 (mmwave_light v1.6.0: Daemmerungs-Binaersensor, Release 1.8.0)
+
+Nutzerwunsch: zusaetzlich zum Luxsensor ein Daemmerungs-Binaersensor
+(Ja/Nein bei Dunkelheit) als weitere Dunkelheitsquelle.
+
+- Neuer optionaler Eingang darkness_sensors (Mehrfachauswahl; binary_sensor /
+  input_boolean / schedule; 'on' = dunkel; default [] -> Re-Import bricht
+  keine bestehende Automation).
+- Nutzer-Entscheidungen: feste ODER-Verknuepfung mit Lux (kein zusaetzlicher
+  Modus-Input); Hellwerden (an -> aus) schaltet NICHT aktiv aus (konsistent
+  zum Lux-Verhalten, Licht geht nur ueber den Praesenz-Timer aus).
+- lux_ok -> darkness_ok mit Stimmen-Logik: nicht konfigurierte bzw.
+  unknown/unavailable Quellen zaehlen nicht; ist KEINE gueltige Quelle
+  konfiguriert, ist die Pruefung deaktiviert (Robustheit aus 1.2.0 erhalten;
+  Schwelle 0 = Lux aus wie bisher).
+- Neuer Template-Trigger darkness_on (analog lux_below) mit mmWave-Guard:
+  feuert nur bei stehender mmWave-Praesenz, damit mode:restart keinen
+  laufenden Ausschalt-Timer abbricht.
+- README-Abschnitt aktualisiert (Features, optionale Eingaben);
+  VERSION 1.7.0 -> 1.8.0.
 
 ---
 
