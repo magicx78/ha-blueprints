@@ -1,8 +1,8 @@
-# mmwave_light.yaml — Version 1.5.0 (2026-07-03)
+# mmwave_light.yaml — Version 1.5.1 (2026-07-18)
 blueprint:
   name: Blueprint mmWave Licht mit Lux, Anwesenheit, Timer und Bypass
   description: >
-    Version 1.5.0 (2026-07-03) — mmWave, Bewegungsmelder, Tuerkontakte &
+    Version 1.5.1 (2026-07-18) — mmWave, Bewegungsmelder, Tuerkontakte &
     Garagentore, alle optional.
 
     Lichtsteuerung mit optionalem mmWave-Praesenzsensor, optionalen
@@ -24,6 +24,16 @@ blueprint:
     bleiben; dann verhaelt sich die Automation exakt wie ohne sie. Es gilt immer
     nur explizit aktive Zustaende; fehlende/leere/unknown/unavailable Entities
     blockieren nichts.
+
+    Neu in 1.5.1:
+    - Trigger-Haertung: mmWave-/Bewegungs-Ausschalt-Trigger feuern nur noch
+      bei echten on->off-Uebergaengen. Geraete-Reconnects (unavailable ->
+      off, z. B. nach WLAN-Ausfall oder HA-Neustart) starten keinen
+      Ausschalt-Timer mehr. Garage-Trigger ignorieren analog Uebergaenge
+      aus unknown/unavailable.
+    - Multi-Helper-Fix: Sind mehrere Bypass- bzw. Sofort-An-Helfer
+      konfiguriert, reagiert die Automation beim Ausschalten EINES Helfers
+      nicht mehr, solange ein anderer Helfer derselben Gruppe noch an ist.
 
     Neu in 1.5.0:
     - Garagentore: neuer optionaler Eingang (Mehrfachauswahl) plus eigener
@@ -349,6 +359,7 @@ triggers:
     id: mmwave_on
   - trigger: state
     entity_id: !input mmwave_sensor
+    from: "on"
     to: "off"
     id: mmwave_off
 
@@ -379,6 +390,7 @@ triggers:
     id: motion_on
   - trigger: state
     entity_id: !input motion_sensors
+    from: "on"
     to: "off"
     id: motion_off
 
@@ -415,10 +427,15 @@ triggers:
     id: door_closed
 
   # Garagentore (optional; Wirkung haengt vom Garagenmodus ab).
-  # Ohne 'from' und mit Zustands-Liste, damit sowohl cover (open/opening/closed)
-  # als auch binary_sensor (on/off) sauber erfasst werden.
+  # Mit Zustands-Liste, damit sowohl cover (open/opening/closed) als auch
+  # binary_sensor (on/off) sauber erfasst werden. not_from verhindert, dass
+  # ein Geraete-Reconnect (unavailable/unknown -> Zustand) faelschlich als
+  # Oeffnen/Schliessen gewertet wird.
   - trigger: state
     entity_id: !input garage_doors
+    not_from:
+      - "unknown"
+      - "unavailable"
     to:
       - "on"
       - "open"
@@ -426,6 +443,9 @@ triggers:
     id: garage_open
   - trigger: state
     entity_id: !input garage_doors
+    not_from:
+      - "unknown"
+      - "unavailable"
     to:
       - "off"
       - "closed"
@@ -447,6 +467,10 @@ actions:
       - conditions:
           - condition: trigger
             id: bypass_off
+          # Multi-Helper-Schutz: ist ein ANDERER Bypass-Helfer noch 'on',
+          # bleibt die Automation blockiert (keine Neubewertung).
+          - condition: template
+            value_template: "{{ not bypass_active }}"
         sequence:
           - choose:
               - conditions:
@@ -556,6 +580,10 @@ actions:
       - conditions:
           - condition: trigger
             id: instant_off
+          # Multi-Helper-Schutz: ist ein ANDERER Sofort-An-Helfer noch 'on',
+          # wird NICHT ausgeschaltet.
+          - condition: template
+            value_template: "{{ not instant_on_active }}"
           - condition: template
             value_template: "{{ not activity_active }}"
         sequence:
