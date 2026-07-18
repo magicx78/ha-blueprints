@@ -1,15 +1,63 @@
+# presence_light.yaml — Version 2.1.0 (2026-07-18)
 blueprint:
   name: "Version 2 Presence & Light – Motion/Presence + Türkontakt + Timer + Dämmerung + Schalter"
   description: >
-    Anwesenheits- und bewegungsbasierte Lichtsteuerung (Version 2).
+    Version 2.1.0 (2026-07-18) — Anwesenheits- und bewegungsbasierte
+    Lichtsteuerung (Version 2).
+
     Unterstuetzt Bewegungsmelder, Praesenz-Sensoren, Tuerkontakte, Timer-Helfer,
     Daemmerungspruefung (Lux und/oder Sonne) sowie einen Sperr-Schalter.
-    Hinweis: Wenn kein Lux-Sensor gesetzt ist oder der Wert unknown/unavailable ist,
-    gilt dies als "dunkel", damit die Automation weiterhin funktioniert.
     Das Licht wird bei Aktivitaet eingeschaltet und nach Ablauf des Timers
-    automatisch ausgeschaltet. Helligkeit und Uebergangszeiten sind konfigurierbar.
+    automatisch ausgeschaltet. Helligkeit und Uebergangszeiten sind
+    konfigurierbar.
+
+    Neu in 2.1.0:
+
+    - Bugfix: Bewegungsmelder-Modus "Deaktiviert" ignoriert Bewegungsmelder
+      jetzt vollstaendig. Vorher schaltete Bewegung das Licht trotzdem ein,
+      hielt es aber nicht — das Licht ging nach Timer-Ablauf aus, obwohl
+      noch Bewegung da war.
+    - Bugfix: Tuerkontakte loesen nur noch bei echten Wechseln zwischen
+      offen und zu aus. Sensor-Ausfaelle (unavailable/unknown) und reine
+      Attribut-Updates (z. B. Batterie) schalten das Licht nicht mehr
+      faelschlich ein (betraf vor allem den Modus "Beides").
+    - Bugfix: Aktivitaet verlaengert den Ausschalt-Timer jetzt auch, wenn
+      das Licht bereits an ist und es dadurch (oder durch Tageslicht) nicht
+      mehr "dunkel" ist. Vorher wurde der Timer nicht mehr aufgefrischt und
+      das Licht konnte trotz Anwesenheit ausgehen.
+    - Neu (Opt-in): "Tuerkontakt haelt Licht an". Im Modus "Offen" haelt
+      eine offene Tuer das Licht an, im Modus "Zu" eine geschlossene Tuer
+      (z. B. Badezimmer). Endet das Halten, startet der Ausschalt-Timer
+      neu. Im Modus "Beides" und "Aus" ohne Wirkung. Standard: aus
+      (bisheriges Verhalten).
+    - Robustheit: Ausgeschaltet wird nur noch, wenn mindestens ein
+      Ziel-Licht an ist (fremde/verwaiste Timer-Ablaeufe sind damit
+      wirkungslos).
+    - Intern: Trigger-IDs umbenannt (motion_on/motion_off, presence_on/
+      presence_off, door_open/door_closed) — keine Auswirkung auf
+      bestehende Konfigurationen, alle Eingaben bleiben unveraendert.
+
+    Hinweise:
+
+    - Den Timer-Helfer pro Automation DEDIZIERT anlegen (nicht mit anderen
+      Automationen/Raeumen teilen), sonst schalten fremde Timer-Ablaeufe
+      das Licht unerwartet aus. Am Timer-Helfer "Wiederherstellen"
+      (restore) aktivieren, damit ein HA-Neustart laufende Timer nicht
+      verschluckt.
+    - Es zaehlen nur explizite Zustaende: Sensoren auf unknown/unavailable
+      gelten beim Timer-Ablauf als inaktiv (das Licht geht dann aus).
+    - Manuell eingeschaltete Lichter werden von der Ausschalt-Logik
+      uebernommen; wer das nicht will, nutzt den Sperr-Schalter.
+    - Die Modi "Bewegung (motion)" und "Praesenz/Hold (presence)" verhalten
+      sich derzeit identisch (beide schalten ein und halten das Licht,
+      solange der Sensor 'on' ist); die Unterscheidung ist fuer kuenftige
+      Versionen reserviert.
+    - Wenn kein Lux-Sensor gesetzt ist oder der Wert unknown/unavailable
+      ist, gilt dies als "dunkel", damit die Automation weiterhin
+      funktioniert.
   domain: automation
   author: "magicx78"
+  source_url: https://raw.githubusercontent.com/magicx78/ha-blueprints/main/blueprints/automation/presence_light.yaml
   homeassistant:
     min_version: "2024.6.0"
 
@@ -67,6 +115,20 @@ blueprint:
               value: "both"
             - label: "Aus"
               value: "off"
+
+    door_contact_hold:
+      name: Türkontakt hält Licht an (Hold)
+      description: >
+        Optional. Wenn aktiviert: Im Modus "Offen" hält eine offene Tür das
+        Licht an, im Modus "Zu" eine geschlossene Tür (z. B. Badezimmer —
+        Tür zu heißt besetzt). Endet das Halten (Tür wird geschlossen bzw.
+        geöffnet), startet der Ausschalt-Timer neu. Im Modus "Beides" und
+        "Aus" ohne Wirkung. Achtung Modus "Zu": Das Licht bleibt an, solange
+        die Tür geschlossen ist — auch wenn der Raum leer sein sollte.
+        Standard: aus (bisheriges Verhalten bleibt erhalten).
+      default: false
+      selector:
+        boolean: {}
 
     activity_timer:
       name: Timer (Helfer)
@@ -176,6 +238,7 @@ variables:
   v_presence: !input presence_sensors
   v_contacts: !input door_contacts
   v_contact_mode: !input door_contact_count_mode
+  v_hold: !input door_contact_hold
   v_timer: !input activity_timer
   v_timer_dur: !input timer_duration
   v_dark_mode: !input darkness_mode
@@ -208,31 +271,59 @@ variables:
     {% set ps = expand(v_presence) if v_presence != [] else [] %}
     {{ ps | selectattr('state', 'eq', 'on') | list | count > 0 }}
 
-  # Achtung: "both" als *Aktivitätszustand* ist logisch tricky.
-  # Hier bleibt deine Semantik erhalten (existiert Kontakt => aktiv),
-  # aber siehe Hinweis unten.
+  # Hold-Zustand der Türkontakte (wirkt nur, wenn v_hold aktiv ist):
+  # "open": mind. eine Tür explizit offen ('on') hält das Licht an.
+  # "closed": mind. eine Tür explizit zu ('off') hält das Licht an.
+  # "both"/"off": KEIN Halten ("both" würde das Licht unsterblich machen,
+  # weil immer eine der beiden Richtungen zutrifft).
+  # unknown/unavailable zählt nie als Halten (nur explizite Zustände).
   v_contact_active: >-
     {% set cs = expand(v_contacts) if v_contacts != [] else [] %}
     {% if v_contact_mode == 'open' %}
       {{ cs | selectattr('state', 'eq', 'on') | list | count > 0 }}
     {% elif v_contact_mode == 'closed' %}
       {{ cs | selectattr('state', 'eq', 'off') | list | count > 0 }}
-    {% elif v_contact_mode == 'both' %}
-      {{ cs | count > 0 }}
     {% else %}
       {{ false }}
     {% endif %}
 
   v_is_active: >-
-    {{ (v_motion_on if v_mode != 'off' else false) or v_presence_on }}
+    {{ (v_motion_on if v_mode != 'off' else false)
+       or v_presence_on
+       or (v_hold and v_contact_active) }}
 
+  # Absicherung für manuelle Ausführung (trigger nicht definiert): dann
+  # 'none' -> kein Zweig greift, sauberer No-Op statt Template-Fehler.
+  v_trigger_id: >-
+    {{ trigger.id if trigger is defined and trigger.id is defined else 'none' }}
+
+  # Türkontakt-Ereignis zählt als AKTIVIERUNG (echte on/off-Übergänge sind
+  # durch from/to im Trigger bereits garantiert):
   v_contact_event_ok: >-
-    {% if trigger.id != 'door_change' %} false
-    {% elif v_contact_mode == 'open' %} {{ trigger.to_state.state == 'on' }}
-    {% elif v_contact_mode == 'closed' %} {{ trigger.to_state.state == 'off' }}
-    {% elif v_contact_mode == 'both' %} true
-    {% else %} false
-    {% endif %}
+    {{ (v_trigger_id == 'door_open' and v_contact_mode in ['open', 'both'])
+       or (v_trigger_id == 'door_closed' and v_contact_mode in ['closed', 'both']) }}
+
+  # Türkontakt-Ereignis BEENDET das Halten (Gegenrichtung je Modus);
+  # nur relevant für den Timer-Neustart in FALL 2 bei aktivem Hold:
+  v_contact_event_off: >-
+    {{ (v_trigger_id == 'door_closed' and v_contact_mode == 'open')
+       or (v_trigger_id == 'door_open' and v_contact_mode == 'closed') }}
+
+  # Aktivierungs-Ereignis: Bewegung (nur wenn Modus nicht "Deaktiviert"),
+  # Präsenz oder passendes Türkontakt-Ereignis.
+  v_activation_event: >-
+    {{ (v_trigger_id == 'motion_on' and v_mode != 'off')
+       or v_trigger_id == 'presence_on'
+       or v_contact_event_ok }}
+
+  # Deaktivierungs-Ereignis: startet in FALL 2 den Ausschalt-Timer (neu).
+  # Bewegung-aus nur, wenn der Bewegungsmodus nicht "Deaktiviert" ist;
+  # Tür-Ereignisse nur bei aktivem Hold (sonst bleibt das bisherige
+  # Verhalten exakt erhalten).
+  v_deactivation_event: >-
+    {{ (v_trigger_id == 'motion_off' and v_mode != 'off')
+       or v_trigger_id == 'presence_off'
+       or (v_hold and v_contact_event_off) }}
 
   v_is_dark: >-
     {% if v_dark_mode == 'always' %}
@@ -253,26 +344,37 @@ trigger:
   - platform: state
     entity_id: !input motion_sensor
     to: "on"
-    id: active_trigger
+    id: motion_on
 
   - platform: state
     entity_id: !input presence_sensors
     to: "on"
-    id: active_trigger
-
-  - platform: state
-    entity_id: !input door_contacts
-    id: door_change
+    id: presence_on
 
   - platform: state
     entity_id: !input motion_sensor
     to: "off"
-    id: inactive_trigger
+    id: motion_off
 
   - platform: state
     entity_id: !input presence_sensors
     to: "off"
-    id: inactive_trigger
+    id: presence_off
+
+  # Türkontakte: nur echte Übergänge offen<->zu. from/to filtert
+  # unavailable/unknown-Übergänge und reine Attribut-Updates bereits im
+  # Trigger — keine Geistereinschaltungen, keine unnötigen restart-Läufe.
+  - platform: state
+    entity_id: !input door_contacts
+    from: "off"
+    to: "on"
+    id: door_open
+
+  - platform: state
+    entity_id: !input door_contacts
+    from: "on"
+    to: "off"
+    id: door_closed
 
   - platform: event
     event_type: timer.finished
@@ -289,13 +391,16 @@ condition:
 
 action:
   - choose:
-      # FALL 1: Aktivierung (Einschalten / Timer Refresh)
+      # FALL 1: Aktivierung (Einschalten und/oder Timer-Refresh).
+      # Einschalten nur bei Dunkelheit. Timer-Refresh aber auch, wenn das
+      # Licht bereits an ist — OHNE Dunkelheitsprüfung, sonst würde das
+      # eigene Licht (Lux-Rückkopplung) oder Tageslicht den Refresh
+      # blockieren und das Licht ginge trotz Anwesenheit aus.
       - conditions:
           - condition: template
-            value_template: >
-              {{ trigger.id == 'active_trigger' or v_contact_event_ok }}
+            value_template: "{{ v_activation_event }}"
           - condition: template
-            value_template: "{{ v_is_dark }}"
+            value_template: "{{ v_any_light_on or v_is_dark }}"
         sequence:
           - if:
               - condition: template
@@ -313,10 +418,11 @@ action:
             data:
               duration: "{{ v_timer_dur | int }}"
 
-      # FALL 2: Inaktivität (nur motion/presence off)
+      # FALL 2: Deaktivierung (Bewegung/Präsenz aus ODER Tür-Hold endet)
+      # -> Ausschalt-Timer (neu) starten, wenn keine Aktivität mehr da ist.
       - conditions:
           - condition: template
-            value_template: "{{ trigger.id == 'inactive_trigger' }}"
+            value_template: "{{ v_deactivation_event }}"
           - condition: template
             value_template: "{{ not v_is_active and v_any_light_on }}"
         sequence:
@@ -326,12 +432,17 @@ action:
             data:
               duration: "{{ v_timer_dur | int }}"
 
-      # FALL 3: Ausschalten
+      # FALL 3: Ausschalten nach Timer-Ablauf.
+      # Nur wenn keine Aktivität (inkl. Tür-Hold) UND mind. ein Ziel-Licht
+      # an ist. Der Licht-an-Check macht fremde/verwaiste Timer-Ereignisse
+      # zum No-Op.
       - conditions:
           - condition: template
-            value_template: "{{ trigger.id == 'timer_finished' }}"
+            value_template: "{{ v_trigger_id == 'timer_finished' }}"
           - condition: template
             value_template: "{{ not v_is_active }}"
+          - condition: template
+            value_template: "{{ v_any_light_on }}"
         sequence:
           - service: light.turn_off
             target:
