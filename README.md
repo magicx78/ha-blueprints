@@ -115,7 +115,7 @@ Liest den Home Assistant Log gefiltert auf eine ausgewählte Automation aus und 
 
 ### Blueprint mmWave Licht mit Lux, Anwesenheit, Timer und Bypass
 
-Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jemand anwesend ist (Person/Gruppe/Helper auf `home`/`on`/`present`/`detected`) und es dunkel genug ist (Lux ≤ Schwellwert). Nach Wegfall der Präsenz wird das Licht nach einer konfigurierbaren Verzögerung ausgeschaltet. Ein Sofort-An-Helfer schaltet das Licht unabhängig von Lux **und** Anwesenheit ein und nimmt es vom automatischen Ausschalten aus. Ein Bypass-Helfer deaktiviert die Automation komplett – bei aktivem Bypass wird weder ein- noch ausgeschaltet; beim Ausschalten des Bypass wird die Situation neu bewertet.
+Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jemand anwesend ist (Person/Gruppe/Helper auf `home`/`on`/`present`/`detected`) und es dunkel genug ist (Lux ≤ Schwellwert **oder** ein Dämmerungssensor meldet Dunkelheit). Nach Wegfall der Präsenz wird das Licht nach einer konfigurierbaren Verzögerung ausgeschaltet. Ein Sofort-An-Helfer schaltet das Licht unabhängig von Dunkelheit **und** Anwesenheit ein und nimmt es vom automatischen Ausschalten aus. Ein Bypass-Helfer deaktiviert die Automation komplett – bei aktivem Bypass wird weder ein- noch ausgeschaltet; beim Ausschalten des Bypass wird die Situation neu bewertet.
 
 **Erfordert: Home Assistant 2024.10.0** (neue `triggers:`/`actions:`-Syntax)
 
@@ -128,13 +128,14 @@ Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jeman
 - **Optionale Garagentore** (`cover` oder `binary_sensor`) mit eigenem Garagenmodus — für Garagentore, die sich nicht als Türkontakt auswählen lassen (Zustände `on`/`open`/`opening` gelten als offen)
 - Anwesenheitsprüfung (Person / Gruppe / Helper)
 - Dämmerungsprüfung über Lux-Schwellwert – **Wert `0` deaktiviert die Luxprüfung**; ein leerer / `unknown` / `unavailable` Luxsensor deaktiviert sie automatisch (Licht funktioniert weiter)
-- **Lux-Trigger:** sinkt die Helligkeit unter den Schwellwert, während der mmWave-Sensor bereits Präsenz meldet, schaltet das Licht automatisch ein (auch ohne neues Bewegungsevent)
+- **Optionale Dämmerungssensor(en)** (`binary_sensor` / `input_boolean` / Zeitplan, Mehrfachauswahl, `on` = dunkel) als zweite Dunkelheitsquelle — **ODER-verknüpft** mit dem Luxsensor: dunkel genug, wenn Lux ≤ Schwellwert **oder** mindestens ein Dämmerungssensor an ist; `unknown`/`unavailable` werden ignoriert, Hellwerden schaltet nie aktiv aus
+- **Dunkel-Trigger:** sinkt die Helligkeit unter den Schwellwert oder meldet ein Dämmerungssensor Dunkelheit, während der mmWave-Sensor bereits Präsenz meldet, schaltet das Licht automatisch ein (auch ohne neues Bewegungsevent)
 - Konfigurierbare Ausschaltverzögerung nach Wegfall der Präsenz
 - Sofort-An ohne Timer (Helfer): sofort ein (ignoriert Lux + Anwesenheit), kein Auto-Aus
 - Bypass-Helfer deaktiviert die Automation komplett (Ein und Aus)
 - Steuert Lichter und/oder Schalter
 
-> **Optionale Eingaben:** Bewegungsmelder, Türkontakte, Bypass-Helfer, Sofort-An-Helfer und Luxsensor sind optional und können leer bleiben — die Automation läuft dann genauso wie ohne sie. Es gilt immer nur explizit `on` als aktiv; fehlende/leere/`unknown`/`unavailable` Entities blockieren nichts.
+> **Optionale Eingaben:** Bewegungsmelder, Türkontakte, Garagentore, Bypass-Helfer, Sofort-An-Helfer, Luxsensor und Dämmerungssensoren sind optional und können leer bleiben — die Automation läuft dann genauso wie ohne sie. Es gilt immer nur explizit `on` als aktiv; fehlende/leere/`unknown`/`unavailable` Entities blockieren nichts.
 >
 > **Türmodus:**
 > - `none`: Türkontakte werden ignoriert.
