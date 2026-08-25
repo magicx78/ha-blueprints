@@ -18,12 +18,50 @@ validieren und auf GitHub veröffentlichen.
 | Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.6.0: Dämmerungs-Binärsensor(en) als neue optionale Dunkelheitsquelle (Mehrfachauswahl, `on` = dunkel, ODER-verknüpft mit Lux; darkness_on-Trigger analog lux_below; Hellwerden schaltet nie aktiv aus). v1.5.1: Trigger-Härtung (unavailable→off startet keinen Off-Timer mehr; Garage not_from unknown/unavailable) + Multi-Helper-Fix (bypass_off/instant_off prüfen verbleibende Helfer). v1.5.0: Garagentore (cover + binary_sensor) mit eigenem Garagenmodus. v1.4.0: mmWave-Sensor optional (Mehrfachauswahl, default []); mind. eine Aktivitätsquelle nötig. v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung; activity_active-DRY; Name-Typo behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte; Bypass/Sofort-An/Luxsensor optional |
 
 | Entity Watchdog (Ausfall-Benachrichtigung) | blueprints/automation/entity_watchdog.yaml | automation | valide | v1.0.0: Überwacht beliebige Entities auf unavailable/unknown; einstellbare Ausfall-Verzögerung (Default 5 min, 0 = sofort); Push an mehrere Companion-App-Geräte + optionale persistente HA-Benachrichtigung; Entwarnung nur nach echter Meldung (Dauer ≥ Verzögerung), ersetzt Push per tag und dismisst die persistente Meldung; continue_on_error je Zustellung; mode: queued. Begleiter zu mmwave_light/presence_light |
+| Automatische Tueroeffnung – Private BLE (IRK) | blueprints/automation/door_unlock_ble.yaml | automation | valide | v1.0.0: Zweistufig (Zonen-Eintritt schaltet scharf, Tuer-Bereich schliesst auf). Identitaet aus Private BLE Device (IRK), Bereichsaufloesung aus Bermuda (liest die Private-BLE-Geraete direkt aus) — kein iBeacon noetig. Mehrere Geraete (Telefon + Uhr) mit ODER-Logik ueber die Mehrfachauswahl im wait_for_trigger. Mindest-Haltezeit gegen springende Area-Sensoren (Default 10 s). Push mit Abbrechen-Knopf statt Telegram, dadurch keine zweite /cdu-Automation noetig. Optional lock.open statt lock.unlock; require_locked-Guard per enabled: !input. Vergleicht Attribut area_id statt Anzeigename |
 
 **Status-Legende:**
 - in Entwicklung
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-08-26 (door_unlock_ble v1.0.0: neues Blueprint, Release 1.9.0)
+
+Nutzerwunsch: eigene Fassung des Community-Blueprints
+"automatically-unlock-your-door-when-getting-in-bluetooth-range" (doktormerlin),
+ohne iBeacon und ohne Telegram, dafuer auf Private BLE Device (IRK) aufgesetzt
+und mit Telefon UND Uhr gleichzeitig nutzbar.
+
+- Kein GitHub-Fork moeglich: doktormerlin hat kein Blueprint-Repo, das Original
+  existiert nur als Forum-Post. Daher eigenstaendige Neufassung mit
+  Herkunftshinweis in Beschreibung und README.
+- Bug im Original gefunden: der Beacon-Selector filtert auf device_class
+  'bermuda__custom_deviformusce_class' — echte Bermuda-Sensoren haben
+  'bermuda__custom_device_class'. Die Auswahlliste war also immer leer.
+  Im Fork korrigiert.
+- Private BLE Device liefert allein keine Tuernaehe: der Entfernungssensor
+  kollabiert bei Apple-Geraeten auf ~0 m (keine verwertbare TX-Power), und das
+  device_tracker-Attribut 'source' ist nur der zuletzt meldende Scanner, nicht
+  der naechste. Deshalb Bermuda als Bereichsaufloesung — Bermuda haengt seine
+  Entitaeten direkt an die Private-BLE-Geraete.
+- Ablauf: Zonen-Eintritt (+ optional Status 'home') schaltet scharf ->
+  wait_for_trigger auf area_id == Ziel-Bereich mit Mindest-Haltezeit ODER auf
+  das Abbrechen-Event -> lock.unlock bzw. lock.open.
+- Mehrfachauswahl der Area-Sensoren im state-Trigger liefert die ODER-Logik
+  Telefon/Uhr ohne Zusatzlogik.
+- Telegram-Zweig ersetzt durch Push der Companion-App mit actionable
+  'Abbrechen'-Knopf; cancel_action_id ist bewusst ein statischer !input, weil
+  event_data im Event-Trigger nicht templatisierbar ist.
+- Gegen das nachweisliche Flattern der Area-Sensoren: Mindest-Haltezeit
+  Default 10 s (Original 5 s), Timeout 5 min (Original 10 min),
+  require_locked-Guard, scharf nur nach Zonen-Eintritt.
+- 4 Input-Sektionen (Person/Zone, BLE+Tuer, Schloss, Push), alle 18 Inputs
+  deklariert und benutzt; yamllint -d relaxed sauber (nur line-length-Warnungen
+  wie bei den bestehenden Dateien).
+- README-Abschnitt + Anforderungstabelle ergaenzt; VERSION 1.8.0 -> 1.9.0.
 
 ---
 
