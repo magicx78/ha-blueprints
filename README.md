@@ -171,6 +171,38 @@ Lichtsteuerung mit mmWave-Präsenzsensor. Das Licht schaltet nur ein, wenn jeman
 
 ---
 
+### Automatische Türöffnung – Private BLE (IRK)
+
+Schließt die Tür automatisch auf, wenn eine Person zuerst eine Zone betritt und danach ihr Bluetooth-Gerät im Tür-Bereich auftaucht. Gedacht für Apple-Geräte mit rotierender MAC-Adresse: die Identität kommt aus **Private BLE Device** (IRK), die Bereichsauflösung aus **Bermuda**, das die Private-BLE-Geräte direkt ausliest. Ein iBeacon-Sender auf dem Telefon wird **nicht** benötigt.
+
+Mehrere Geräte sind gleichzeitig auswählbar (z. B. iPhone **und** Apple Watch) — es genügt, wenn eines davon den Tür-Bereich erreicht. So funktioniert es unabhängig davon, was gerade mitgeführt wird.
+
+**Erfordert: Home Assistant 2024.10.0** (neue `triggers:`/`actions:`-Syntax)
+
+> **Voraussetzungen:**
+> - Integration **Private BLE Device** mit dem IRK des Geräts eingerichtet
+> - Integration **Bermuda BLE Trilateration** installiert — sie legt je Private-BLE-Gerät einen „Area"-Sensor an (`sensor.<gerät>_area`)
+> - Mindestens ein Bluetooth-Proxy im Tür-Bereich, und der Bereich ist dem Proxy-Gerät zugewiesen
+
+**Features:**
+- **Zweistufig:** erst Zonen-Eintritt (schaltet scharf), dann Tür-Bereich (schließt auf) — ein zufälliger Zonen-Eintritt öffnet nichts
+- **Mehrere Geräte** (Telefon, Uhr) mit ODER-Logik — es reicht, wenn eines erkannt wird
+- **Mindest-Haltezeit** im Tür-Bereich gegen springende Area-Sensoren (Default 10 s)
+- **Abbrechen-Knopf** direkt in der Push-Benachrichtigung — anders als beim Vorbild ist dafür keine zweite Automation nötig
+- **`lock.open` statt `lock.unlock`** optional, für Antriebe mit Türöffner-Funktion
+- **Nur öffnen, wenn verriegelt** (Default an) — keine unnötigen Schaltvorgänge und Meldungen
+- Verglichen wird das Attribut `area_id`, nicht der Anzeigename — den Bereich umbenennen bricht nichts
+
+> **Wichtig:**
+> - Bermuda-Area-Sensoren können springen. Die Mindest-Haltezeit deshalb nicht zu klein wählen und den Timeout kurz halten. Die Automation ist ohnehin nur nach einem Zonen-Eintritt scharf.
+> - Bei mehreren Instanzen (mehrere Personen oder Türen) je Automation eine eigene **Kennung des Abbrechen-Knopfes** vergeben, sonst bricht ein Knopfdruck alle Instanzen gleichzeitig ab.
+
+*Idee nach [diesem Community-Thread](https://community.home-assistant.io/t/automatically-unlock-your-door-when-getting-in-bluetooth-range/747598); eigenständige Umsetzung ohne iBeacon und ohne Telegram.*
+
+[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://raw.githubusercontent.com/magicx78/ha-blueprints/main/blueprints/automation/door_unlock_ble.yaml)
+
+---
+
 ## Installation
 
 1. Auf den "Import Blueprint" Button des gewünschten Blueprints klicken.
@@ -192,6 +224,7 @@ Bei Blueprints mit Voraussetzungen (Log Viewer, GrowWarn) zuerst die beschrieben
 | GrowWarn | 2024.6.0 |
 | Blueprint mmWave Licht | 2024.10.0 |
 | Entity Watchdog | 2024.10.0 |
+| Automatische Türöffnung – Private BLE (IRK) | 2024.10.0 |
 
 ---
 
