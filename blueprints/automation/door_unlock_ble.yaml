@@ -1,0 +1,358 @@
+# Automatische Tueroeffnung - Private BLE (IRK) v1.0.0
+# Eigenstaendige Neufassung der Idee aus
+# https://community.home-assistant.io/t/automatically-unlock-your-door-when-getting-in-bluetooth-range/747598
+# Unterschiede: kein iBeacon, kein Telegram, Apple-Geraete per IRK / Private BLE Device.
+blueprint:
+  name: "🚪 Automatische Türöffnung – Private BLE (IRK) v1.0.0"
+  description: >
+    🔑 Entriegelt die Tür automatisch, wenn eine Person zuerst die gewählte Zone betritt
+    und danach ihr Bluetooth-Gerät im Tür-Bereich auftaucht.
+
+
+    📡 Für Apple-Geräte mit rotierender MAC gedacht: die Identität kommt aus der
+    Integration Private BLE Device (IRK), die Bereichsauflösung aus Bermuda, das die
+    Private-BLE-Geräte direkt ausliest. Es wird kein iBeacon-Sender auf dem Telefon
+    benötigt.
+
+
+    ⌚ Mehrere Geräte gleichzeitig auswählbar (z. B. iPhone und Apple Watch) – es genügt,
+    wenn eines davon den Tür-Bereich erreicht. So funktioniert es unabhängig davon, was
+    gerade mitgeführt wird.
+
+
+    📲 Statt Telegram gibt es eine Push-Benachrichtigung der Companion-App mit
+    Abbrechen-Knopf. Eine zweite Automation für den Abbruch ist nicht nötig.
+
+
+    ⚠️ Voraussetzungen: Integration Private BLE Device mit dem IRK des Geräts
+    eingerichtet; Integration Bermuda BLE Trilateration installiert (erzeugt je Gerät
+    einen Area-Sensor); mindestens ein Bluetooth-Proxy im Tür-Bereich, und der Bereich
+    ist dem Proxy-Gerät zugewiesen.
+
+
+    💡 Hinweis zur Zuverlässigkeit: Bermuda-Area-Sensoren können springen. Die
+    Mindest-Haltezeit deshalb nicht zu klein wählen (Default 10 s) und den Timeout kurz
+    halten. Die Automation ist ohnehin nur nach einem Zonen-Eintritt scharf.
+  domain: automation
+  author: "magicx78"
+  homeassistant:
+    min_version: "2024.10.0"
+  source_url: https://raw.githubusercontent.com/magicx78/ha-blueprints/main/blueprints/automation/door_unlock_ble.yaml
+
+  input:
+
+    # ========================================================
+    # SEKTION 1: Person & Zone
+    # ========================================================
+    section_person:
+      name: "🧍 Person & Zone"
+      icon: mdi:account-arrow-right
+      input:
+        person_entity:
+          name: "🧍 Person"
+          description: "Die Person, deren Zonen-Eintritt die Automation scharf schaltet."
+          selector:
+            entity:
+              filter:
+                domain: person
+
+        zone_entity:
+          name: "📍 Zone"
+          description: >
+            Die Zone, die betreten werden muss. Erst danach wartet die Automation auf das
+            Bluetooth-Gerät.
+          default: zone.home
+          selector:
+            entity:
+              filter:
+                domain: zone
+
+        coming_home:
+          name: "🏠 Auch bei Status home auslösen"
+          description: >
+            Zusätzlich auslösen, wenn die Person auf home wechselt. Sinnvoll, wenn die
+            Anwesenheit über WLAN statt über GPS erkannt wird.
+          default: false
+          selector:
+            boolean: {}
+
+    # ========================================================
+    # SEKTION 2: Bluetooth-Geraete & Tuer-Bereich
+    # ========================================================
+    section_ble:
+      name: "📡 Bluetooth-Geräte & Tür-Bereich"
+      icon: mdi:bluetooth-audio
+      input:
+        ble_area_sensors:
+          name: "📱 Bermuda-Area-Sensoren der Geräte"
+          description: >
+            Die Area-Sensoren, die Bermuda für deine Private-BLE-/IRK-Geräte anlegt
+            (heissen typischerweise sensor.GERAET_area). Mehrere auswählbar – z. B.
+            Telefon und Uhr. Es reicht, wenn eines davon den Tür-Bereich erreicht
+            (ODER-Verknüpfung).
+          selector:
+            entity:
+              filter:
+                - integration: bermuda
+                  domain: sensor
+                  device_class: bermuda__custom_device_class
+              multiple: true
+
+        target_area:
+          name: "🚪 Tür-Bereich"
+          description: >
+            Der Bereich, in dem der Bluetooth-Proxy an der Tür steht. Verglichen wird das
+            Attribut area_id des Sensors – ein Umbenennen des Bereichs-Anzeigenamens
+            bricht die Automation also nicht.
+          selector:
+            area: {}
+
+        min_area_time:
+          name: "⏱️ Mindest-Haltezeit im Tür-Bereich"
+          description: >
+            So lange muss das Gerät ununterbrochen im Tür-Bereich gemeldet sein, bevor
+            aufgeschlossen wird. Kürzere Werte reagieren schneller, springen aber eher
+            fehlerhaft an.
+          default:
+            hours: 0
+            minutes: 0
+            seconds: 10
+          selector:
+            duration:
+              enable_day: false
+
+        approach_timeout:
+          name: "⌛ Timeout nach Zonen-Eintritt"
+          description: >
+            Wird der Tür-Bereich innerhalb dieser Zeit nicht erreicht, bricht die
+            Automation ab, ohne aufzuschliessen.
+          default:
+            hours: 0
+            minutes: 5
+            seconds: 0
+          selector:
+            duration:
+              enable_day: false
+
+    # ========================================================
+    # SEKTION 3: Schloss
+    # ========================================================
+    section_lock:
+      name: "🔒 Schloss"
+      icon: mdi:lock-open-variant
+      input:
+        lock_entity:
+          name: "🔒 Schloss"
+          description: "Das Schloss, das geöffnet werden soll."
+          selector:
+            entity:
+              filter:
+                domain: lock
+
+        use_open:
+          name: "🚪 Öffnen statt nur Entriegeln"
+          description: >
+            Ruft lock.open statt lock.unlock auf – zieht bei Antrieben mit
+            Türöffner-Funktion die Tür auf. Nur aktivieren, wenn das Schloss open
+            unterstützt (Attribut supported_features enthält OPEN).
+          default: false
+          selector:
+            boolean: {}
+
+        require_locked:
+          name: "🔐 Nur öffnen, wenn aktuell verriegelt"
+          description: >
+            Bricht ab, wenn das Schloss ohnehin schon offen ist. Verhindert unnötige
+            Schaltvorgänge und Push-Meldungen.
+          default: true
+          selector:
+            boolean: {}
+
+    # ========================================================
+    # SEKTION 4: Push-Benachrichtigung
+    # ========================================================
+    section_notify:
+      name: "📲 Push-Benachrichtigung (optional)"
+      icon: mdi:cellphone-message
+      collapsed: true
+      input:
+        notify_services:
+          name: "📱 Notify-Services"
+          description: >
+            Kommagetrennte Liste, z. B.
+            notify.mobile_app_iphone,notify.mobile_app_tablet. Leer lassen fuer keine
+            Benachrichtigung.
+          default: ""
+          selector:
+            text: {}
+
+        notify_title:
+          name: "📌 Titel der Ankündigung"
+          default: "🚪 Türöffnung vorbereitet"
+          selector:
+            text: {}
+
+        notify_message:
+          name: "💬 Text der Ankündigung"
+          description: "Jinja-Templates sind erlaubt."
+          default: >-
+            Du wurdest in der Nähe erkannt. Kommst du jetzt zur Tür, wird automatisch
+            aufgeschlossen.
+          selector:
+            text:
+              multiline: true
+
+        notify_done_message:
+          name: "✅ Text nach dem Aufschliessen"
+          default: "Die Tür wurde aufgeschlossen."
+          selector:
+            text: {}
+
+        notify_cancel_message:
+          name: "🛑 Text nach dem Abbrechen"
+          default: "Türöffnung abgebrochen – es bleibt zu."
+          selector:
+            text: {}
+
+        cancel_action_id:
+          name: "🛑 Kennung des Abbrechen-Knopfes"
+          description: >
+            Muss je Automation eindeutig sein. Läuft dieser Blueprint mehrfach (mehrere
+            Personen oder Türen), hier pro Instanz einen eigenen Wert eintragen – sonst
+            bricht ein Knopfdruck alle Instanzen gleichzeitig ab.
+          default: "BLE_UNLOCK_CANCEL"
+          selector:
+            text: {}
+
+        cancel_button_title:
+          name: "🛑 Beschriftung des Abbrechen-Knopfes"
+          default: "Abbrechen"
+          selector:
+            text: {}
+
+        notify_interruption_level:
+          name: "🔔 iOS Interruption Level"
+          default: "time-sensitive"
+          selector:
+            select:
+              options:
+                - label: "🔔 active (Standard)"
+                  value: "active"
+                - label: "⏰ time-sensitive (Dringlich)"
+                  value: "time-sensitive"
+                - label: "🚨 critical (Immer, auch DND)"
+                  value: "critical"
+                - label: "🔕 passive (Lautlos)"
+                  value: "passive"
+
+mode: restart
+max_exceeded: silent
+
+variables:
+  lock_entity: !input lock_entity
+  use_open: !input use_open
+  notify_services_raw: !input notify_services
+  notify_targets: >-
+    {{ notify_services_raw.split(',') | map('trim') | reject('eq', '') | list }}
+
+triggers:
+  - trigger: zone
+    entity_id: !input person_entity
+    zone: !input zone_entity
+    event: enter
+    id: zone_enter
+
+  - trigger: state
+    entity_id: !input person_entity
+    to: home
+    enabled: !input coming_home
+    id: person_home
+
+actions:
+  # 1) Nichts tun, wenn das Schloss ohnehin offen ist
+  - alias: "Nur weiter, wenn verriegelt"
+    condition: state
+    entity_id: !input lock_entity
+    state: locked
+    enabled: !input require_locked
+
+  # 2) Ankuendigung mit Abbrechen-Knopf
+  - alias: "Ankündigung senden"
+    repeat:
+      for_each: "{{ notify_targets }}"
+      sequence:
+        - action: "{{ repeat.item }}"
+          continue_on_error: true
+          data:
+            title: !input notify_title
+            message: !input notify_message
+            data:
+              tag: "ble_unlock_{{ this.entity_id }}"
+              push:
+                interruption-level: !input notify_interruption_level
+              actions:
+                - action: !input cancel_action_id
+                  title: !input cancel_button_title
+
+  # 3) Auf Tuer-Bereich warten - oder auf den Abbrechen-Knopf
+  - alias: "Auf Tür-Bereich oder Abbruch warten"
+    wait_for_trigger:
+      - trigger: state
+        entity_id: !input ble_area_sensors
+        attribute: area_id
+        to: !input target_area
+        for: !input min_area_time
+        id: at_door
+      - trigger: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: !input cancel_action_id
+        id: cancelled
+    timeout: !input approach_timeout
+    continue_on_timeout: false
+
+  # 4) Abbruch durch den Nutzer
+  - alias: "Abbruch behandeln"
+    if:
+      - condition: template
+        value_template: "{{ wait.trigger is defined and wait.trigger.id == 'cancelled' }}"
+    then:
+      - repeat:
+          for_each: "{{ notify_targets }}"
+          sequence:
+            - action: "{{ repeat.item }}"
+              continue_on_error: true
+              data:
+                title: !input notify_title
+                message: !input notify_cancel_message
+                data:
+                  tag: "ble_unlock_{{ this.entity_id }}"
+      - stop: "Türöffnung durch Nutzer abgebrochen."
+
+  # 5) Aufschliessen
+  - alias: "Schloss öffnen"
+    choose:
+      - conditions:
+          - condition: template
+            value_template: "{{ use_open }}"
+        sequence:
+          - action: lock.open
+            target:
+              entity_id: !input lock_entity
+    default:
+      - action: lock.unlock
+        target:
+          entity_id: !input lock_entity
+
+  # 6) Bestaetigung - ersetzt die Ankuendigung ueber denselben tag
+  - alias: "Bestätigung senden"
+    repeat:
+      for_each: "{{ notify_targets }}"
+      sequence:
+        - action: "{{ repeat.item }}"
+          continue_on_error: true
+          data:
+            title: !input notify_title
+            message: !input notify_done_message
+            data:
+              tag: "ble_unlock_{{ this.entity_id }}"
