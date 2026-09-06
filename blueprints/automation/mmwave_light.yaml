@@ -73,9 +73,9 @@ blueprint:
 
     Neu in 1.2.0:
     - Lux-Robustheit: ein leerer oder unknown/unavailable Luxsensor deaktiviert
-      die Luxpruefung automatisch, statt das Einschalten zu blockieren (analog
-      zum presence_light-Blueprint). Ein separat gesetzter Daemmerungswert 0
-      deaktiviert die Luxpruefung weiterhin ebenfalls.
+      die Luxpruefung automatisch, statt das Einschalten zu blockieren.
+      Ein separat gesetzter Daemmerungswert 0 deaktiviert die Luxpruefung
+      weiterhin ebenfalls.
     - Interne Aufraeumung: die zentrale Variable activity_active wird jetzt
       konsequent genutzt (reine Lesbarkeit, keine Verhaltensaenderung).
 

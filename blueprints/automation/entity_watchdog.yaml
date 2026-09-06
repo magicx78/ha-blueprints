@@ -8,8 +8,8 @@ blueprint:
     Hinweis an ein oder mehrere Handys (HA Companion App) und/oder als
     persistente Benachrichtigung in Home Assistant.
 
-    Gedacht als Begleiter zu Licht-Automationen (z. B. mmwave_light,
-    presence_light): faellt ein Sensor aus, wertet die Licht-Automation ihn
+    Gedacht als Begleiter zu Licht-Automationen (z. B. mmwave_light):
+    faellt ein Sensor aus, wertet die Licht-Automation ihn
     als "keine Praesenz" — dieses Blueprint sagt dir rechtzeitig Bescheid,
     was los ist und wie du damit umgehst (z. B. Bypass aktivieren, Licht
     manuell schalten).

@@ -1,5 +1,5 @@
 blueprint:
-  name: "🚪 Tür offen – Alarm Pro v4"
+  name: "🚪 Tür offen – Alarm Pro v4.1"
   description: >
     🏠 Vollständiger Tür-Alarm mit TTS & Push.
     ✅ Danke-Ansage nur nach echtem Alarm-Trigger.
@@ -7,6 +7,8 @@ blueprint:
     🔋 Batterie-Warnung: sensor.* (%) UND binary_sensor.* (LOWBAT) – mehrere Entities möglich.
     🔁 Wiederholungsansagen mit Custom Actions.
     🐛 v4: Bugfixes – Tür-TTS zuerst, dann Batterie; Boolean-String-Fix; Batterie multi-Entity.
+    🐛 v4.1: Bool-Fix Schlafzeit/Batterie – bei deaktivierter Schlafzeit (00:00:00) lieferte
+    das Template den String "false" statt false, dadurch wurden TTS, Chime und Push nie ausgeführt.
     HA 2024.10+ kompatibel.
   domain: automation
   author: "magicx78"
@@ -528,7 +530,7 @@ action:
                         {{ now_t >= v_tts_sleep_start or now_t < v_tts_sleep_end }}
                       {% endif %}
                     {% else %}
-                      false
+                      {{ false }}
                     {% endif %}
               - if:
                   - condition: template
@@ -602,7 +604,7 @@ action:
                         {{ now_t >= v_tts_sleep_start or now_t < v_tts_sleep_end }}
                       {% endif %}
                     {% else %}
-                      false
+                      {{ false }}
                     {% endif %}
                   v_in_push_sleep_now: >-
                     {% if v_push_sleep_start != '00:00:00' and v_push_sleep_end != '00:00:00' and v_push_sleep_start != v_push_sleep_end %}
@@ -613,7 +615,7 @@ action:
                         {{ now_t >= v_push_sleep_start or now_t < v_push_sleep_end }}
                       {% endif %}
                     {% else %}
-                      false
+                      {{ false }}
                     {% endif %}
 
               # ── 4c. Chime abspielen ───────────────────────────────────────
@@ -695,7 +697,7 @@ action:
                                   {{ states(batt_entity) | int(100) < v_battery_threshold | int(20) }}
                                 {% endif %}
                               {% else %}
-                                false
+                                {{ false }}
                               {% endif %}
                             v_batt_level: >-
                               {% if states(batt_entity) not in ['unavailable', 'unknown', ''] %}
@@ -798,7 +800,7 @@ action:
                                       {{ now_t >= v_tts_sleep_start or now_t < v_tts_sleep_end }}
                                     {% endif %}
                                   {% else %}
-                                    false
+                                    {{ false }}
                                   {% endif %}
                                 v_in_push_sleep_loop: >-
                                   {% if v_push_sleep_start != '00:00:00' and v_push_sleep_end != '00:00:00' and v_push_sleep_start != v_push_sleep_end %}
@@ -809,7 +811,7 @@ action:
                                       {{ now_t >= v_push_sleep_start or now_t < v_push_sleep_end }}
                                     {% endif %}
                                   {% else %}
-                                    false
+                                    {{ false }}
                                   {% endif %}
 
                             # Wiederholungs-TTS

@@ -1,9 +1,9 @@
-# Automatische Tueroeffnung - Private BLE (IRK) v1.0.0
+# Automatische Tueroeffnung - Private BLE (IRK) v1.0.1
 # Eigenstaendige Neufassung der Idee aus
 # https://community.home-assistant.io/t/automatically-unlock-your-door-when-getting-in-bluetooth-range/747598
 # Unterschiede: kein iBeacon, kein Telegram, Apple-Geraete per IRK / Private BLE Device.
 blueprint:
-  name: "🚪 Automatische Türöffnung – Private BLE (IRK) v1.0.0"
+  name: "🚪 Automatische Türöffnung – Private BLE (IRK) v1.0.1"
   description: >
     🔑 Entriegelt die Tür automatisch, wenn eine Person zuerst die gewählte Zone betritt
     und danach ihr Bluetooth-Gerät im Tür-Bereich auftaucht.
@@ -246,7 +246,6 @@ blueprint:
                   value: "passive"
 
 mode: restart
-max_exceeded: silent
 
 variables:
   lock_entity: !input lock_entity
@@ -254,6 +253,15 @@ variables:
   notify_services_raw: !input notify_services
   notify_targets: >-
     {{ notify_services_raw.split(',') | map('trim') | reject('eq', '') | list }}
+  ble_area_sensors: !input ble_area_sensors
+  target_area: !input target_area
+  # Steht ein Geraet beim Start bereits im Tuer-Bereich, gibt es keinen
+  # Attribut-Uebergang mehr - der State-Trigger im Wait wuerde nie feuern.
+  already_at_door: >-
+    {{ expand(ble_area_sensors)
+       | selectattr('attributes.area_id', 'defined')
+       | selectattr('attributes.area_id', 'eq', target_area)
+       | list | count > 0 }}
 
 triggers:
   - trigger: zone
@@ -294,40 +302,49 @@ actions:
                 - action: !input cancel_action_id
                   title: !input cancel_button_title
 
-  # 3) Auf Tuer-Bereich warten - oder auf den Abbrechen-Knopf
+  # 3) Auf Tuer-Bereich warten - oder auf den Abbrechen-Knopf.
+  #    Ist ein Geraet bereits im Tuer-Bereich (z. B. GPS-Zoneneintritt kam
+  #    verspaetet), wird das Warten uebersprungen - sonst wuerde der
+  #    State-Trigger mangels Uebergang nie feuern und nur der Timeout greifen.
   - alias: "Auf Tür-Bereich oder Abbruch warten"
-    wait_for_trigger:
-      - trigger: state
-        entity_id: !input ble_area_sensors
-        attribute: area_id
-        to: !input target_area
-        for: !input min_area_time
-        id: at_door
-      - trigger: event
-        event_type: mobile_app_notification_action
-        event_data:
-          action: !input cancel_action_id
-        id: cancelled
-    timeout: !input approach_timeout
-    continue_on_timeout: false
-
-  # 4) Abbruch durch den Nutzer
-  - alias: "Abbruch behandeln"
     if:
       - condition: template
-        value_template: "{{ wait.trigger is defined and wait.trigger.id == 'cancelled' }}"
+        value_template: "{{ not already_at_door }}"
     then:
-      - repeat:
-          for_each: "{{ notify_targets }}"
-          sequence:
-            - action: "{{ repeat.item }}"
-              continue_on_error: true
-              data:
-                title: !input notify_title
-                message: !input notify_cancel_message
-                data:
-                  tag: "ble_unlock_{{ this.entity_id }}"
-      - stop: "Türöffnung durch Nutzer abgebrochen."
+      - wait_for_trigger:
+          - trigger: state
+            entity_id: !input ble_area_sensors
+            attribute: area_id
+            to: !input target_area
+            for: !input min_area_time
+            id: at_door
+          - trigger: event
+            event_type: mobile_app_notification_action
+            event_data:
+              action: !input cancel_action_id
+            id: cancelled
+        timeout: !input approach_timeout
+        continue_on_timeout: false
+
+      # 4) Abbruch durch den Nutzer (im selben Block, damit `wait` sicher
+      #    definiert ist - unabhaengig von der Variablen-Sichtbarkeit der
+      #    HA-Version)
+      - alias: "Abbruch behandeln"
+        if:
+          - condition: template
+            value_template: "{{ wait.trigger is defined and wait.trigger.id == 'cancelled' }}"
+        then:
+          - repeat:
+              for_each: "{{ notify_targets }}"
+              sequence:
+                - action: "{{ repeat.item }}"
+                  continue_on_error: true
+                  data:
+                    title: !input notify_title
+                    message: !input notify_cancel_message
+                    data:
+                      tag: "ble_unlock_{{ this.entity_id }}"
+          - stop: "Türöffnung durch Nutzer abgebrochen."
 
   # 5) Aufschliessen
   - alias: "Schloss öffnen"

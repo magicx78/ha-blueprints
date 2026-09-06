@@ -1,5 +1,5 @@
 # ═══════════════════════════════════════════════════════════════════════════
-#  GrowWarn Blueprint  –  v1.5  (HA 2024.8.0+)
+#  GrowWarn Blueprint  –  v1.5.1  (HA 2024.8.0+)
 #  Datei ablegen unter:  config/blueprints/automation/growwarn/growwarn.yaml
 #  Danach: Einstellungen → Automationen → Blueprint importieren → GrowWarn
 # ═══════════════════════════════════════════════════════════════════════════
@@ -49,6 +49,12 @@ blueprint:
     bei leerem Sensor auf ALLE state_changed-Events (OOM-Kill bei Sensoren
     mit 2–3 Sek Update-Intervall). Jetzt sicher durch
     enabled: !input binary_sensor_enabled.
+
+    ── v1.5.1 Fix ──
+    Binärsensor: Trigger auf das state_changed-Event umgestellt. Bisher brach
+    ein leer gelassener Sensor (entity_id '') das Laden der Automation, und
+    reine Attribut-Updates lösten Tür-Meldungen aus. Stale-Erkennung stürzt
+    bei gelöschter/umbenannter Sensor-Entität nicht mehr ab (zählt als stale).
 
     ── v1.5 Fix ──
     Stale-Erkennung: last_changed → last_reported (Fallback last_updated).
@@ -486,8 +492,13 @@ trigger:
 
   # Binärsensor – Zustandsänderung
   # enabled: false (default) → Trigger schläft vollständig, kein Trigger-Storm
-  - platform: state
-    entity_id: !input binary_sensor
+  # state_changed-Event statt state-Trigger: ein leerer Sensor ('') ist als
+  # Trigger-entity_id ungültig und würde das Laden der Automation brechen;
+  # als event_data-Filter passt er einfach nie.
+  - platform: event
+    event_type: state_changed
+    event_data:
+      entity_id: !input binary_sensor
     enabled: !input binary_sensor_enabled
     id: "binary_change"
 
@@ -624,11 +635,6 @@ action:
         - variables:
             latch_gh1_temp: "{{ states('input_text.growwarn_gh1_temp') }}"
             val_gh1_temp:   "{{ states(v_gh1_temp) | float(none) }}"
-            last_gh1_temp:  >
-              {{ (as_timestamp(states[v_gh1_temp].last_reported
-                   if states[v_gh1_temp].last_reported is defined
-                   else states[v_gh1_temp].last_updated) | float(0))
-                 if v_gh1_temp != '' else 0 }}
             out_gh1_temp: >
               {{ val_gh1_temp is not none
                  and (val_gh1_temp < v_gh1_tmin or val_gh1_temp > v_gh1_tmax) }}
@@ -1037,11 +1043,11 @@ action:
             - variables:
                 latch_gh1_ts: "{{ states('input_text.growwarn_gh1_temp_stale') }}"
                 age_gh1_temp: >
-                  {{ (as_timestamp(now())
-                      - as_timestamp(states[v_gh1_temp].last_reported
-                        if states[v_gh1_temp].last_reported is defined
-                        else states[v_gh1_temp].last_updated) | float(0))
-                     if v_gh1_temp != '' and states[v_gh1_temp] is defined else 9999 }}
+                  {% set st = states[v_gh1_temp] if v_gh1_temp != '' else none %}
+                  {{ 9999 if st is none
+                     else (as_timestamp(now())
+                           - as_timestamp(st.last_reported if st.last_reported is defined
+                                          else st.last_updated, 0)) }}
                 gh1_ts_state: >
                   {% set raw = latch_gh1_ts %}
                   {% if raw == 'stale_warned' %}stale_warned
@@ -1107,11 +1113,11 @@ action:
             - variables:
                 latch_gh1_hs: "{{ states('input_text.growwarn_gh1_hum_stale') }}"
                 age_gh1_hum_s: >
-                  {{ (as_timestamp(now())
-                      - as_timestamp(states[v_gh1_hum].last_reported
-                        if states[v_gh1_hum].last_reported is defined
-                        else states[v_gh1_hum].last_updated) | float(0))
-                     if v_gh1_hum != '' and states[v_gh1_hum] is defined else 9999 }}
+                  {% set st = states[v_gh1_hum] if v_gh1_hum != '' else none %}
+                  {{ 9999 if st is none
+                     else (as_timestamp(now())
+                           - as_timestamp(st.last_reported if st.last_reported is defined
+                                          else st.last_updated, 0)) }}
                 gh1_hs_state: >
                   {% if latch_gh1_hs == 'stale_warned' %}stale_warned{% else %}idle{% endif %}
             - choose:
@@ -1521,11 +1527,11 @@ action:
             - variables:
                 latch_gh2_ts: "{{ states('input_text.growwarn_gh2_temp_stale') }}"
                 age_gh2_temp: >
-                  {{ (as_timestamp(now())
-                      - as_timestamp(states[v_gh2_temp].last_reported
-                        if states[v_gh2_temp].last_reported is defined
-                        else states[v_gh2_temp].last_updated) | float(0))
-                     if v_gh2_temp != '' and states[v_gh2_temp] is defined else 9999 }}
+                  {% set st = states[v_gh2_temp] if v_gh2_temp != '' else none %}
+                  {{ 9999 if st is none
+                     else (as_timestamp(now())
+                           - as_timestamp(st.last_reported if st.last_reported is defined
+                                          else st.last_updated, 0)) }}
             - choose:
                 - conditions:
                     - condition: template
@@ -1572,11 +1578,11 @@ action:
             - variables:
                 latch_gh2_hs: "{{ states('input_text.growwarn_gh2_hum_stale') }}"
                 age_gh2_hum_s: >
-                  {{ (as_timestamp(now())
-                      - as_timestamp(states[v_gh2_hum].last_reported
-                        if states[v_gh2_hum].last_reported is defined
-                        else states[v_gh2_hum].last_updated) | float(0))
-                     if v_gh2_hum != '' and states[v_gh2_hum] is defined else 9999 }}
+                  {% set st = states[v_gh2_hum] if v_gh2_hum != '' else none %}
+                  {{ 9999 if st is none
+                     else (as_timestamp(now())
+                           - as_timestamp(st.last_reported if st.last_reported is defined
+                                          else st.last_updated, 0)) }}
             - choose:
                 - conditions:
                     - condition: template
@@ -1962,11 +1968,11 @@ action:
             - variables:
                 latch_gh3_ts: "{{ states('input_text.growwarn_gh3_temp_stale') }}"
                 age_gh3_temp: >
-                  {{ (as_timestamp(now())
-                      - as_timestamp(states[v_gh3_temp].last_reported
-                        if states[v_gh3_temp].last_reported is defined
-                        else states[v_gh3_temp].last_updated) | float(0))
-                     if v_gh3_temp != '' and states[v_gh3_temp] is defined else 9999 }}
+                  {% set st = states[v_gh3_temp] if v_gh3_temp != '' else none %}
+                  {{ 9999 if st is none
+                     else (as_timestamp(now())
+                           - as_timestamp(st.last_reported if st.last_reported is defined
+                                          else st.last_updated, 0)) }}
             - choose:
                 - conditions:
                     - condition: template
@@ -2007,11 +2013,11 @@ action:
             - variables:
                 latch_gh3_hs: "{{ states('input_text.growwarn_gh3_hum_stale') }}"
                 age_gh3_hum_s: >
-                  {{ (as_timestamp(now())
-                      - as_timestamp(states[v_gh3_hum].last_reported
-                        if states[v_gh3_hum].last_reported is defined
-                        else states[v_gh3_hum].last_updated) | float(0))
-                     if v_gh3_hum != '' and states[v_gh3_hum] is defined else 9999 }}
+                  {% set st = states[v_gh3_hum] if v_gh3_hum != '' else none %}
+                  {{ 9999 if st is none
+                     else (as_timestamp(now())
+                           - as_timestamp(st.last_reported if st.last_reported is defined
+                                          else st.last_updated, 0)) }}
             - choose:
                 - conditions:
                     - condition: template
@@ -2210,10 +2216,14 @@ action:
         - condition: trigger
           id: "binary_change"
         - condition: template
-          value_template: "{{ v_bin_en and v_bin_sensor != '' }}"
+          value_template: >
+            {{ v_bin_en and v_bin_sensor != ''
+               and trigger.event.data.new_state is not none
+               and trigger.event.data.old_state is not none
+               and trigger.event.data.new_state.state != trigger.event.data.old_state.state }}
       sequence:
         - variables:
-            bin_new_state:  "{{ trigger.to_state.state }}"
+            bin_new_state:  "{{ trigger.event.data.new_state.state }}"
             bin_is_now_open: "{{ bin_new_state == v_bin_open_state }}"
 
         - choose:

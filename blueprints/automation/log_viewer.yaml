@@ -1,3 +1,24 @@
+# log_viewer.yaml — Automation Log Viewer v1.1.0
+#
+# Voraussetzung in configuration.yaml (Beispiel). Der Blueprint ruft
+# shell_command.log_viewer_write_term mit den Variablen automation_name
+# (gewaehlter Eintrag des Dropdowns) und log_level (Regex, z. B. WARNING|ERROR)
+# auf und liest danach sensor.automation_log_reader neu ein.
+#
+#   shell_command:
+#     log_viewer_write_term: >-
+#       grep -E "({{ log_level }})" /config/home-assistant.log
+#       | grep -F "{{ automation_name }}" | tail -n 30
+#       > /config/log_viewer_term.txt || true
+#
+#   command_line:
+#     - sensor:
+#         name: automation_log_reader
+#         command: "tail -c 255 /config/log_viewer_term.txt 2>/dev/null"
+#         scan_interval: 86400
+#
+# Hinweis: `platform: command_line` unter `sensor:` gibt es seit HA 2023.6
+# nicht mehr — nur noch der Top-Level-Key `command_line:` wie oben.
 blueprint:
   name: "🔍 Automation Log Viewer"
   description: >
@@ -5,7 +26,10 @@ blueprint:
     Gibt das Ergebnis als Persistent Notification und/oder
     in einen input_text Helper aus.
     Voraussetzung: command_line Sensor und shell_command müssen
-    in configuration.yaml eingerichtet sein.
+    in configuration.yaml eingerichtet sein (Beispiel als Kommentar
+    am Anfang der Blueprint-Datei).
+    v1.1.0: Automation und Log-Level werden an den shell_command
+    uebergeben — der Log-Level-Filter war vorher wirkungslos.
   domain: automation
   author: "magicx78"
   homeassistant:
@@ -67,9 +91,15 @@ variables:
 trigger:
   - platform: state
     entity_id: !input automation_select
+    # to: (leer) = nur echte Zustandswechsel, keine Attribut-Updates
+    to:
 
 action:
+  # Ein shell_command ohne diese Platzhalter ignoriert die Werte einfach.
   - action: shell_command.log_viewer_write_term
+    data:
+      automation_name: "{{ states(automation_select) }}"
+      log_level: "{{ log_level_var }}"
 
   - delay: "00:00:02"
 
