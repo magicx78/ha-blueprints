@@ -2,7 +2,7 @@
 
 Home Assistant Blueprints von [@magicx78](https://github.com/magicx78)
 
-Alle Blueprints sind validiert (YAML-Syntax + HA-Schema) und erfordern mindestens Home Assistant 2024.6.0 (Ausnahme: Tür Alarm Pro benötigt 2024.10.0).
+Alle Blueprints sind validiert (YAML-Syntax + HA-Schema) und erfordern mindestens Home Assistant 2024.6.0. Ausnahmen: GrowWarn benötigt 2024.8.0; mmWave Licht, Tür Alarm Pro, Entity Watchdog und Türöffnung BLE benötigen 2024.10.0. Zuletzt gegen die Release-Notes bis Home Assistant 2026.9 geprüft (2026-09-06).
 
 ---
 
@@ -19,29 +19,6 @@ Meldet Kamera- und Stream-Ausfälle über drei unabhängige Signale: die Kamera-
 - Kompatibel mit Frigate-Integrationen
 
 [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://raw.githubusercontent.com/magicx78/ha-blueprints/main/blueprints/automation/cam_active.yaml)
-
----
-
-### Presence & Light v2 – Motion/Presence + Türkontakt + Timer + Dämmerung + Schalter
-
-Anwesenheits- und bewegungsbasierte Lichtsteuerung. Unterstützt Bewegungsmelder, Präsenz-Sensoren, Türkontakte, Timer-Helfer, Dämmerungsprüfung (Lux und/oder Sonnenstand) sowie einen Sperr-Schalter. Das Licht schaltet sich bei Aktivität ein und nach Ablauf des Timers automatisch aus. Hinweis: Fehlt der Lux-Sensor oder liefert er unknown/unavailable, gilt dies als „dunkel“, damit die Automation weiter funktioniert. Neu in v2.1.0: Türkontakt-Hold (Opt-in), robuste Türkontakt-Trigger (nur echte offen/zu-Übergänge), Timer-Refresh auch bei bereits eingeschaltetem Licht sowie ein vollständig ignorierender Bewegungsmelder-Modus „Deaktiviert“ — behebt „Licht geht trotz Anwesenheit einfach aus“.
-
-**Features:**
-- Bewegungsmelder und Präsenz-Sensoren kombinierbar
-- Türkontakt als zusätzlicher Trigger
-- **Türkontakt-Hold (Opt-in):** offene Tür (Modus „Offen“) bzw. geschlossene Tür (Modus „Zu“, z. B. Badezimmer) hält das Licht an; endet das Halten, startet der Ausschalt-Timer neu
-- Robuste Türkontakt-Trigger: `unavailable`/`unknown` und reine Attribut-Updates lösen nichts mehr aus
-- Dämmerungsprüfung via Lux-Sensor oder Sonnenstand (gilt nur fürs Einschalten — Aktivität verlängert den Timer auch, wenn es inzwischen hell ist)
-- Sperr-Schalter zum manuellen Deaktivieren
-- Helligkeit und Übergangszeiten konfigurierbar
-
-> **Wichtig:**
-> - Den Timer-Helfer **pro Automation dediziert** anlegen (nicht mit anderen Räumen/Automationen teilen), sonst schalten fremde Timer-Abläufe das Licht unerwartet aus. Am Timer „Wiederherstellen“ (restore) aktivieren, damit ein HA-Neustart laufende Timer nicht verschluckt.
-> - Es zählen nur explizite Zustände: Sensoren auf `unknown`/`unavailable` gelten beim Timer-Ablauf als inaktiv.
-> - Manuell eingeschaltete Lichter werden von der Ausschalt-Logik übernommen — dauerhaft manuelles Licht über den Sperr-Schalter absichern.
-> - Der Hold wirkt nur in den Türkontakt-Modi „Offen“ und „Zu“, nie bei „Beides“.
-
-[![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://raw.githubusercontent.com/magicx78/ha-blueprints/main/blueprints/automation/presence_light.yaml)
 
 ---
 
@@ -71,7 +48,7 @@ Liest den Home Assistant Log gefiltert auf eine ausgewählte Automation aus und 
 > - Einen `command_line`-Sensor (z.B. `sensor.automation_log_reader`), der den Log ausliest
 > - Einen `shell_command`-Eintrag, der den gefilterten Log-Abruf ausführt
 >
-> Ohne diese Konfiguration in `configuration.yaml` funktioniert der Blueprint nicht. Details zur Einrichtung liegen als Kommentar in der Blueprint-Datei.
+> Ohne diese Konfiguration in `configuration.yaml` funktioniert der Blueprint nicht. Ein vollständiges Beispiel liegt als Kommentar am Anfang der Blueprint-Datei. Der Blueprint übergibt `automation_name` und `log_level` als Variablen an den `shell_command`.
 
 **Features:**
 - Filtert HA-Log auf gewählte Automation
