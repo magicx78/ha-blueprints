@@ -11,20 +11,52 @@ validieren und auf GitHub veröffentlichen.
 | Blueprint | Datei | Domain | Status | Notizen |
 |-----------|-------|--------|--------|---------|
 | Camera Health (Frigate FPS + Unavailable + Pulse Ping) | blueprints/automation/cam_active.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
-| Presence & Light v2 | blueprints/automation/presence_light.yaml | automation | valide | v2.1.0: Modus-"Deaktiviert"-Fix (Bewegung schaltete ein, hielt aber nicht), Türkontakt-Hold (Opt-in, Modi open/closed, mit Timer-Re-Arm), Tür-Trigger nur noch echte on/off-Übergänge (from/to), Timer-Refresh auch bei Licht an (Dunkelheit gated nur noch das Einschalten), Ausschalten nur bei Licht an, source_url + Versionsheader. Zuvor: author + min_version 2024.6.0 + Beschreibung nachgetragen |
-| Tuer offen Alarm Pro v4 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | author nachgetragen; min_version 2024.10.0 war bereits vorhanden |
-| Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
-| GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.4: binary_sensor enabled-Guard Fix (OOM-Kill), min_version → 2024.1.0 |
-| Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.6.0: Dämmerungs-Binärsensor(en) als neue optionale Dunkelheitsquelle (Mehrfachauswahl, `on` = dunkel, ODER-verknüpft mit Lux; darkness_on-Trigger analog lux_below; Hellwerden schaltet nie aktiv aus). v1.5.1: Trigger-Härtung (unavailable→off startet keinen Off-Timer mehr; Garage not_from unknown/unavailable) + Multi-Helper-Fix (bypass_off/instant_off prüfen verbleibende Helfer). v1.5.0: Garagentore (cover + binary_sensor) mit eigenem Garagenmodus. v1.4.0: mmWave-Sensor optional (Mehrfachauswahl, default []); mind. eine Aktivitätsquelle nötig. v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung; activity_active-DRY; Name-Typo behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte; Bypass/Sofort-An/Luxsensor optional |
+| Tuer offen Alarm Pro v4.1 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | v4.1 (2026-09-06): Bool-Fix — in den Schlafzeit- und Batterie-Templates stand im else-Zweig ein literales `false`, das HA als String "false" parst (literal_eval kennt nur True/False); bei deaktivierter Schlafzeit (Default 00:00:00) schlugen dadurch alle `== false`-Vergleiche fehl und TTS/Chime/Push liefen nie. Jetzt `{{ false }}`. Zuvor: author nachgetragen; min_version 2024.10.0 |
+| Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | v1.1.0 (2026-09-06): automation_name + log_level werden als data an shell_command.log_viewer_write_term uebergeben (Log-Level-Filter war vorher reine Deko); Trigger `to:` leer = keine Attribut-Updates; configuration.yaml-Beispiel (shell_command + command_line) als Kommentar in der Datei. Zuvor: author + min_version 2024.6.0 |
+| GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.5.1 (2026-09-06): Binaersensor-Trigger auf `platform: event` (state_changed mit event_data.entity_id) umgestellt — der leere Default '' war als Trigger-entity_id ungueltig (cv.entity_ids) und brach das Laden der ganzen Automation, `enabled:` schuetzt davor nicht; Attribut-Updates loesen keine Tuer-Meldung mehr aus (old/new state verglichen). Stale-Alter robust: `states[x]` liefert bei geloeschter Entitaet None, `None is defined` ist True → as_timestamp warf; jetzt Guard `st is none` → 9999. Totes Feld last_gh1_temp entfernt. v1.5: last_reported, tts.speak-Schema; min_version 2024.8.0 |
+| Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | 2026-09-06: presence_light-Verweis aus der Beschreibung entfernt (nur Text, keine Logikaenderung). v1.6.0: Dämmerungs-Binärsensor(en) als neue optionale Dunkelheitsquelle (Mehrfachauswahl, `on` = dunkel, ODER-verknüpft mit Lux; darkness_on-Trigger analog lux_below; Hellwerden schaltet nie aktiv aus). v1.5.1: Trigger-Härtung (unavailable→off startet keinen Off-Timer mehr; Garage not_from unknown/unavailable) + Multi-Helper-Fix (bypass_off/instant_off prüfen verbleibende Helfer). v1.5.0: Garagentore (cover + binary_sensor) mit eigenem Garagenmodus. v1.4.0: mmWave-Sensor optional (Mehrfachauswahl, default []); mind. eine Aktivitätsquelle nötig. v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung; activity_active-DRY; Name-Typo behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte; Bypass/Sofort-An/Luxsensor optional |
 
-| Entity Watchdog (Ausfall-Benachrichtigung) | blueprints/automation/entity_watchdog.yaml | automation | valide | v1.0.0: Überwacht beliebige Entities auf unavailable/unknown; einstellbare Ausfall-Verzögerung (Default 5 min, 0 = sofort); Push an mehrere Companion-App-Geräte + optionale persistente HA-Benachrichtigung; Entwarnung nur nach echter Meldung (Dauer ≥ Verzögerung), ersetzt Push per tag und dismisst die persistente Meldung; continue_on_error je Zustellung; mode: queued. Begleiter zu mmwave_light/presence_light |
-| Automatische Tueroeffnung – Private BLE (IRK) | blueprints/automation/door_unlock_ble.yaml | automation | valide | v1.0.0: Zweistufig (Zonen-Eintritt schaltet scharf, Tuer-Bereich schliesst auf). Identitaet aus Private BLE Device (IRK), Bereichsaufloesung aus Bermuda (liest die Private-BLE-Geraete direkt aus) — kein iBeacon noetig. Mehrere Geraete (Telefon + Uhr) mit ODER-Logik ueber die Mehrfachauswahl im wait_for_trigger. Mindest-Haltezeit gegen springende Area-Sensoren (Default 10 s). Push mit Abbrechen-Knopf statt Telegram, dadurch keine zweite /cdu-Automation noetig. Optional lock.open statt lock.unlock; require_locked-Guard per enabled: !input. Vergleicht Attribut area_id statt Anzeigename |
+| Entity Watchdog (Ausfall-Benachrichtigung) | blueprints/automation/entity_watchdog.yaml | automation | valide | 2026-09-06: presence_light-Verweis aus der Beschreibung entfernt. v1.0.0: Überwacht beliebige Entities auf unavailable/unknown; einstellbare Ausfall-Verzögerung (Default 5 min, 0 = sofort); Push an mehrere Companion-App-Geräte + optionale persistente HA-Benachrichtigung; Entwarnung nur nach echter Meldung (Dauer ≥ Verzögerung), ersetzt Push per tag und dismisst die persistente Meldung; continue_on_error je Zustellung; mode: queued. Begleiter zu mmwave_light/presence_light |
+| Automatische Tueroeffnung – Private BLE (IRK) | blueprints/automation/door_unlock_ble.yaml | automation | valide | v1.0.0: Zweistufig (Zonen-Eintritt schaltet scharf, Tuer-Bereich schliesst auf). Identitaet aus Private BLE Device (IRK), Bereichsaufloesung aus Bermuda (liest die Private-BLE-Geraete direkt aus) — kein iBeacon noetig. Mehrere Geraete (Telefon + Uhr) mit ODER-Logik ueber die Mehrfachauswahl im wait_for_trigger. Mindest-Haltezeit gegen springende Area-Sensoren (Default 10 s). Push mit Abbrechen-Knopf statt Telegram, dadurch keine zweite /cdu-Automation noetig. Optional lock.open statt lock.unlock; require_locked-Guard per enabled: !input. Vergleicht Attribut area_id statt Anzeigename. v1.0.1 (2026-09-06): steht ein Geraet beim Start bereits im Tuer-Bereich (GPS-Zoneneintritt kommt oft verspaetet), wird das wait_for_trigger uebersprungen — der State-Trigger haette mangels Uebergang nie gefeuert, nur der Timeout. Abbruch-Behandlung in denselben Block gezogen (wait sicher definiert). max_exceeded bei mode: restart entfernt (wirkungslos) |
 
 **Status-Legende:**
 - in Entwicklung
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-09-06 (presence_light entfernt, Kompatibilitaets-Review HA 2026.9, Release 2.0.0)
+
+Nutzerwunsch: presence_light.yaml aus dem Repo nehmen, danach alle Blueprints
+auf Kompatibilitaet und Fehler pruefen und bereinigen.
+
+- presence_light.yaml geloescht (Datei, README-Abschnitt, Tabellenzeile).
+  Bereits importierte Instanzen laufen weiter (HA haelt eine Kopie), ein
+  Re-Import ueber die raw-URL geht ab jetzt ins Leere — daher Major-Bump 2.0.0.
+- Freshness-Check gegen die offiziellen Release-Notes 2026.5 bis 2026.9:
+  keine Breaking Changes fuer die hier verwendete Automations-/Blueprint-Syntax.
+  Legacy-Schreibweisen (`platform:`, `service:`, Singular-Top-Level-Keys in
+  cam_active, growwarn, log_viewer, tuer_alarm_pro) laufen unveraendert und
+  wurden bewusst NICHT umgeschrieben (minimal-invasiv). Relevant nur am Rand:
+  2026.7 Zonen-Semantik (kleinste Zone, in_zones), 2026.9 persistent_notification
+  update_type `updated` — beides hier ohne Auswirkung.
+- Fehlalarme der Review-Agents, gegen den HA-Quellcode widerlegt: eine LEERE
+  Mehrfachauswahl `[]` als Trigger-entity_id ist gueltig (cv.entity_ids liefert
+  []), cam_active und mmwave_light sind davon nicht betroffen. Ein leerer STRING
+  '' dagegen ist ungueltig — das war der echte Fehler in growwarn.
+- Fixes: growwarn v1.5.1, tuer_alarm_pro v4.1, door_unlock_ble v1.0.1,
+  log_viewer v1.1.0, tote presence_light-Verweise in entity_watchdog und
+  mmwave_light (Details in der Tabelle oben).
+- Verifiziert: yamllint relaxed (nur Warnungen), CI-Schema-Skript lokal gruen,
+  alle 567 Jinja-Templates syntaktisch geparst.
+- Bewusst offen gelassen (nur Hinweis, kein Umbau): tuer_alarm_pro erkennt
+  "war Alarm" ueber die Oeffnungsdauer statt ueber einen Merker (Danke-Ansage
+  kann bei Bypass/Sperre falsch feuern); log_viewer nutzt fest
+  sensor.automation_log_reader und eine statische notification_id (eine
+  Instanz pro HA); growwarn ist durch GH1/GH2/GH3-Duplikation 122 KB gross.
+- Prod: door_unlock_ble laeuft auf der Prod-HA → Re-Import noetig.
 
 ---
 
@@ -483,4 +515,4 @@ Publisher-Schritt abgeschlossen (2026-03-16):
 - [x] v1.0.0 — lokales Repo bereit, initialer Commit erstellt
 - [x] v1.0.0 — GitHub Push erfolgt
 - [ ] v1.1.0 — growwarn v1.4 Fix — GitHub Push + Release ausstehend
-- [ ] v1.1.0 — presence_light: Lux-Fallback (unknown/unavailable/fehlend => dunkel) + README/PROGRESS Hinweis
+- [x] 2.0.0 — presence_light.yaml entfernt (2026-09-06); Kompatibilitaets-Review HA 2026.9
