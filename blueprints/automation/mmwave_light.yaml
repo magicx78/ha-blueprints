@@ -1,8 +1,8 @@
-# mmwave_light.yaml — Version 1.6.0 (2026-07-18)
+# mmwave_light.yaml — Version 1.6.1 (2026-09-08)
 blueprint:
   name: Blueprint mmWave Licht mit Lux, Anwesenheit, Timer und Bypass
   description: >
-    Version 1.6.0 (2026-07-18) — mmWave, Bewegungsmelder, Tuerkontakte,
+    Version 1.6.1 (2026-09-08) — mmWave, Bewegungsmelder, Tuerkontakte,
     Garagentore & Daemmerungssensor, alle optional.
 
     Lichtsteuerung mit optionalem mmWave-Praesenzsensor, optionalen
@@ -25,6 +25,9 @@ blueprint:
     Daemmerungssensoren) koennen leer bleiben; dann verhaelt sich die
     Automation exakt wie ohne sie. Es gilt immer nur explizit aktive
     Zustaende; fehlende/leere/unknown/unavailable Entities blockieren nichts.
+
+    Neu in 1.6.1: - Schaltaktionen mit continue_on_error: schlaegt das Ziel fehl (z. B.
+      Matter/Zigbee-Timeout), bricht die Automation nicht mehr mit Fehler ab.
 
     Neu in 1.6.0:
     - Daemmerungssensor(en): neuer optionaler Eingang (Mehrfachauswahl;
@@ -550,11 +553,13 @@ actions:
                 sequence:
                   - action: homeassistant.turn_on
                     target: !input light_target
+                    continue_on_error: true
             default:
               - condition: template
                 value_template: "{{ not instant_on_active and not activity_active }}"
               - action: homeassistant.turn_off
                 target: !input light_target
+                continue_on_error: true
 
       # ============================================================
       # EINSCHALTEN
@@ -595,6 +600,7 @@ actions:
         sequence:
           - action: homeassistant.turn_on
             target: !input light_target
+            continue_on_error: true
 
       # ============================================================
       # AUSSCHALTEN MIT DELAY
@@ -639,6 +645,7 @@ actions:
                  and not motion_now and not door_hold_now and not garage_hold_now }}
           - action: homeassistant.turn_off
             target: !input light_target
+            continue_on_error: true
 
       # ============================================================
       # SOFORT-AN AUS -> ggf. sofort ausschalten (ohne Delay),
@@ -656,3 +663,4 @@ actions:
         sequence:
           - action: homeassistant.turn_off
             target: !input light_target
+            continue_on_error: true
