@@ -1,5 +1,5 @@
 blueprint:
-  name: "🚪 Tür offen – Alarm Pro v4.1"
+  name: "🚪 Tür offen – Alarm Pro v4.2"
   description: >
     🏠 Vollständiger Tür-Alarm mit TTS & Push.
     ✅ Danke-Ansage nur nach echtem Alarm-Trigger.
@@ -7,13 +7,15 @@ blueprint:
     🔋 Batterie-Warnung: sensor.* (%) UND binary_sensor.* (LOWBAT) – mehrere Entities möglich.
     🔁 Wiederholungsansagen mit Custom Actions.
     🐛 v4: Bugfixes – Tür-TTS zuerst, dann Batterie; Boolean-String-Fix; Batterie multi-Entity.
-    🐛 v4.1: Bool-Fix Schlafzeit/Batterie – bei deaktivierter Schlafzeit (00:00:00) lieferte
-    das Template den String "false" statt false, dadurch wurden TTS, Chime und Push nie ausgeführt.
-    HA 2024.10+ kompatibel.
+    🐛 v4.1: Bool-Fix für Schlafzeit und Batterie.
+    🛠️ v4.2: Aktuelle Tür-/Fenster-Trigger, native Zeitbedingungen, Batterie-Warnungen beachten
+    jetzt ebenfalls die Schlafzeiten. Vorhandene Input-IDs bleiben erhalten.
+    Home Assistant 2026.7 oder neuer.
   domain: automation
   author: "magicx78"
+  source_url: https://github.com/magicx78/ha-blueprints/blob/main/blueprints/automation/tuer_alarm_pro.yaml
   homeassistant:
-    min_version: "2024.10.0"
+    min_version: "2026.7.0"
 
   input:
 
@@ -26,11 +28,14 @@ blueprint:
       input:
         door_entity:
           name: "🚪 Tür-Sensor(en)"
-          description: "Ein oder mehrere binary_sensor Entities (Tür/Fenster)"
+          description: "Tür- oder Fenster-Binärsensoren mit passender Geräteklasse"
           selector:
             entity:
               filter:
-                domain: binary_sensor
+                - domain: binary_sensor
+                  device_class: door
+                - domain: binary_sensor
+                  device_class: window
               multiple: true
 
         initial_delay:
@@ -427,9 +432,7 @@ max: 20
 max_exceeded: silent
 
 variables:
-  v_door_entity: !input door_entity
   v_initial_delay: !input initial_delay
-  v_debounce: !input trigger_debounce_seconds
   v_tts_enabled: !input tts_enabled
   v_media_players: !input media_player_entity
   v_tts_service: !input tts_service
@@ -440,6 +443,10 @@ variables:
   v_thank_you_mode: !input thank_you_mode
   v_tts_sleep_start: !input tts_sleep_start
   v_tts_sleep_end: !input tts_sleep_end
+  v_tts_sleep_disabled: >-
+    {{ v_tts_sleep_start == '00:00:00'
+       or v_tts_sleep_end == '00:00:00'
+       or v_tts_sleep_start == v_tts_sleep_end }}
   v_chime_url: !input chime_url
   v_chime_type: !input chime_media_content_type
   v_chime_wait: !input chime_wait_seconds
@@ -452,6 +459,10 @@ variables:
   v_notify_level: !input notify_interruption_level
   v_push_sleep_start: !input push_sleep_start
   v_push_sleep_end: !input push_sleep_end
+  v_push_sleep_disabled: >-
+    {{ v_push_sleep_start == '00:00:00'
+       or v_push_sleep_end == '00:00:00'
+       or v_push_sleep_start == v_push_sleep_end }}
   v_battery_warn_enabled: !input battery_warn_enabled
   v_battery_sensors: !input battery_sensor
   v_battery_threshold: !input battery_threshold
@@ -464,27 +475,48 @@ variables:
   v_disable_switch: !input disable_switch
   v_bypass_entities: !input bypass_entities
 
-# FIX: Für Blueprints robust: trigger/action (singular) + platform:
-trigger:
-  - platform: state
-    entity_id: !input door_entity
-    to: "on"
+# Purpose-specific triggers ignore unavailable/unknown recovery transitions.
+trigger_variables:
+  v_trigger_debounce_seconds: !input trigger_debounce_seconds
+
+triggers:
+  - trigger: door.opened
+    target:
+      entity_id: !input door_entity
+    options:
+      behavior: each
+      for: "{{ '00:00:%02d' | format(v_trigger_debounce_seconds | int(1)) }}"
     id: door_opened
-    for:
-      seconds: !input trigger_debounce_seconds
 
-  - platform: state
-    entity_id: !input door_entity
-    to: "off"
+  - trigger: door.closed
+    target:
+      entity_id: !input door_entity
+    options:
+      behavior: each
+      for: "{{ '00:00:%02d' | format(v_trigger_debounce_seconds | int(1)) }}"
     id: door_closed
-    for:
-      seconds: !input trigger_debounce_seconds
 
-action:
+  - trigger: window.opened
+    target:
+      entity_id: !input door_entity
+    options:
+      behavior: each
+      for: "{{ '00:00:%02d' | format(v_trigger_debounce_seconds | int(1)) }}"
+    id: door_opened
+
+  - trigger: window.closed
+    target:
+      entity_id: !input door_entity
+    options:
+      behavior: each
+      for: "{{ '00:00:%02d' | format(v_trigger_debounce_seconds | int(1)) }}"
+    id: door_closed
+
+actions:
   # ── Laufzeit-Variablen ────────────────────────────────────────────────────
   - variables:
       v_triggered_door: "{{ trigger.entity_id }}"
-      v_trig_name: "{{ state_attr(trigger.entity_id, 'friendly_name') | default(trigger.entity_id) }}"
+      v_trig_name: "{{ state_attr(trigger.entity_id, 'friendly_name') | default(trigger.entity_id, true) }}"
 
   - choose:
 
@@ -520,21 +552,16 @@ action:
                     )
                   }}
             then:
-              - variables:
-                  v_in_tts_sleep: >-
-                    {% if v_tts_sleep_start != '00:00:00' and v_tts_sleep_end != '00:00:00' and v_tts_sleep_start != v_tts_sleep_end %}
-                      {% set now_t = now().strftime('%H:%M:%S') %}
-                      {% if v_tts_sleep_start <= v_tts_sleep_end %}
-                        {{ v_tts_sleep_start <= now_t < v_tts_sleep_end }}
-                      {% else %}
-                        {{ now_t >= v_tts_sleep_start or now_t < v_tts_sleep_end }}
-                      {% endif %}
-                    {% else %}
-                      {{ false }}
-                    {% endif %}
               - if:
-                  - condition: template
-                    value_template: "{{ v_in_tts_sleep == false }}"
+                  - condition: or
+                    conditions:
+                      - condition: template
+                        value_template: "{{ v_tts_sleep_disabled }}"
+                      - condition: not
+                        conditions:
+                          - condition: time
+                            after: !input tts_sleep_start
+                            before: !input tts_sleep_end
                 then:
                   - action: "{{ v_tts_service }}"
                     data:
@@ -593,36 +620,19 @@ action:
                 then:
                   - stop: "🛡️ Schalter/Bypass nach Delay aktiv"
 
-              # ── 4b. Schlafzeit berechnen ──────────────────────────────────
-              - variables:
-                  v_in_tts_sleep_now: >-
-                    {% if v_tts_sleep_start != '00:00:00' and v_tts_sleep_end != '00:00:00' and v_tts_sleep_start != v_tts_sleep_end %}
-                      {% set now_t = now().strftime('%H:%M:%S') %}
-                      {% if v_tts_sleep_start <= v_tts_sleep_end %}
-                        {{ v_tts_sleep_start <= now_t < v_tts_sleep_end }}
-                      {% else %}
-                        {{ now_t >= v_tts_sleep_start or now_t < v_tts_sleep_end }}
-                      {% endif %}
-                    {% else %}
-                      {{ false }}
-                    {% endif %}
-                  v_in_push_sleep_now: >-
-                    {% if v_push_sleep_start != '00:00:00' and v_push_sleep_end != '00:00:00' and v_push_sleep_start != v_push_sleep_end %}
-                      {% set now_t = now().strftime('%H:%M:%S') %}
-                      {% if v_push_sleep_start <= v_push_sleep_end %}
-                        {{ v_push_sleep_start <= now_t < v_push_sleep_end }}
-                      {% else %}
-                        {{ now_t >= v_push_sleep_start or now_t < v_push_sleep_end }}
-                      {% endif %}
-                    {% else %}
-                      {{ false }}
-                    {% endif %}
-
               # ── 4c. Chime abspielen ───────────────────────────────────────
               - if:
                   - condition: template
-                    value_template: >-
-                      {{ v_tts_enabled == true and v_chime_url != '' and v_in_tts_sleep_now == false }}
+                    value_template: "{{ v_tts_enabled == true and v_chime_url != '' }}"
+                  - condition: or
+                    conditions:
+                      - condition: template
+                        value_template: "{{ v_tts_sleep_disabled }}"
+                      - condition: not
+                        conditions:
+                          - condition: time
+                            after: !input tts_sleep_start
+                            before: !input tts_sleep_end
                 then:
                   - action: media_player.play_media
                     target:
@@ -636,7 +646,16 @@ action:
               # ── 4d. Erste TTS-Ansage (Tür offen) ─────────────────────────
               - if:
                   - condition: template
-                    value_template: "{{ v_tts_enabled == true and v_in_tts_sleep_now == false }}"
+                    value_template: "{{ v_tts_enabled == true }}"
+                  - condition: or
+                    conditions:
+                      - condition: template
+                        value_template: "{{ v_tts_sleep_disabled }}"
+                      - condition: not
+                        conditions:
+                          - condition: time
+                            after: !input tts_sleep_start
+                            before: !input tts_sleep_end
                 then:
                   - action: "{{ v_tts_service }}"
                     data:
@@ -651,7 +670,16 @@ action:
               - if:
                   - condition: template
                     value_template: >-
-                      {{ v_notify_enabled == true and v_notify_services != '' and v_in_push_sleep_now == false }}
+                      {{ v_notify_enabled == true and v_notify_services != '' }}
+                  - condition: or
+                    conditions:
+                      - condition: template
+                        value_template: "{{ v_push_sleep_disabled }}"
+                      - condition: not
+                        conditions:
+                          - condition: time
+                            after: !input push_sleep_start
+                            before: !input push_sleep_end
                 then:
                   - repeat:
                       for_each: "{{ v_notify_services.split(',') | map('trim') | list }}"
@@ -720,6 +748,15 @@ action:
                                 - condition: template
                                   value_template: >-
                                     {{ v_battery_notify_push == true and v_notify_enabled == true and v_notify_services != '' }}
+                                - condition: or
+                                  conditions:
+                                    - condition: template
+                                      value_template: "{{ v_push_sleep_disabled }}"
+                                    - condition: not
+                                      conditions:
+                                        - condition: time
+                                          after: !input push_sleep_start
+                                          before: !input push_sleep_end
                               then:
                                 - repeat:
                                     for_each: "{{ v_notify_services.split(',') | map('trim') | list }}"
@@ -742,6 +779,15 @@ action:
                             - if:
                                 - condition: template
                                   value_template: "{{ v_battery_notify_tts == true and v_tts_enabled == true }}"
+                                - condition: or
+                                  conditions:
+                                    - condition: template
+                                      value_template: "{{ v_tts_sleep_disabled }}"
+                                    - condition: not
+                                      conditions:
+                                        - condition: time
+                                          after: !input tts_sleep_start
+                                          before: !input tts_sleep_end
                               then:
                                 - action: "{{ v_tts_service }}"
                                   data:
@@ -758,6 +804,15 @@ action:
                             - if:
                                 - condition: template
                                   value_template: "{{ v_battery_notify_tts == true and v_tts_enabled == true }}"
+                                - condition: or
+                                  conditions:
+                                    - condition: template
+                                      value_template: "{{ v_tts_sleep_disabled }}"
+                                    - condition: not
+                                      conditions:
+                                        - condition: time
+                                          after: !input tts_sleep_start
+                                          before: !input tts_sleep_end
                               then:
                                 - delay:
                                     seconds: 4
@@ -791,33 +846,20 @@ action:
                             - variables:
                                 open_min: >-
                                   {{ ((now().timestamp() - as_timestamp(states[v_triggered_door].last_changed)) / 60) | int }}
-                                v_in_tts_sleep_loop: >-
-                                  {% if v_tts_sleep_start != '00:00:00' and v_tts_sleep_end != '00:00:00' and v_tts_sleep_start != v_tts_sleep_end %}
-                                    {% set now_t = now().strftime('%H:%M:%S') %}
-                                    {% if v_tts_sleep_start <= v_tts_sleep_end %}
-                                      {{ v_tts_sleep_start <= now_t < v_tts_sleep_end }}
-                                    {% else %}
-                                      {{ now_t >= v_tts_sleep_start or now_t < v_tts_sleep_end }}
-                                    {% endif %}
-                                  {% else %}
-                                    {{ false }}
-                                  {% endif %}
-                                v_in_push_sleep_loop: >-
-                                  {% if v_push_sleep_start != '00:00:00' and v_push_sleep_end != '00:00:00' and v_push_sleep_start != v_push_sleep_end %}
-                                    {% set now_t = now().strftime('%H:%M:%S') %}
-                                    {% if v_push_sleep_start <= v_push_sleep_end %}
-                                      {{ v_push_sleep_start <= now_t < v_push_sleep_end }}
-                                    {% else %}
-                                      {{ now_t >= v_push_sleep_start or now_t < v_push_sleep_end }}
-                                    {% endif %}
-                                  {% else %}
-                                    {{ false }}
-                                  {% endif %}
 
                             # Wiederholungs-TTS
                             - if:
                                 - condition: template
-                                  value_template: "{{ v_tts_enabled == true and v_in_tts_sleep_loop == false }}"
+                                  value_template: "{{ v_tts_enabled == true }}"
+                                - condition: or
+                                  conditions:
+                                    - condition: template
+                                      value_template: "{{ v_tts_sleep_disabled }}"
+                                    - condition: not
+                                      conditions:
+                                        - condition: time
+                                          after: !input tts_sleep_start
+                                          before: !input tts_sleep_end
                               then:
                                 - action: "{{ v_tts_service }}"
                                   data:
@@ -834,7 +876,16 @@ action:
                             - if:
                                 - condition: template
                                   value_template: >-
-                                    {{ v_notify_enabled == true and v_notify_services != '' and v_in_push_sleep_loop == false }}
+                                    {{ v_notify_enabled == true and v_notify_services != '' }}
+                                - condition: or
+                                  conditions:
+                                    - condition: template
+                                      value_template: "{{ v_push_sleep_disabled }}"
+                                    - condition: not
+                                      conditions:
+                                        - condition: time
+                                          after: !input push_sleep_start
+                                          before: !input push_sleep_end
                               then:
                                 - repeat:
                                     for_each: "{{ v_notify_services.split(',') | map('trim') | list }}"
@@ -852,3 +903,4 @@ action:
                                           data:
                                             push:
                                               interruption-level: "{{ v_notify_level }}"
+
