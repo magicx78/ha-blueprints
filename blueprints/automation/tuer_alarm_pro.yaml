@@ -433,6 +433,7 @@ max_exceeded: silent
 
 variables:
   v_initial_delay: !input initial_delay
+  v_debounce: !input trigger_debounce_seconds
   v_tts_enabled: !input tts_enabled
   v_media_players: !input media_player_entity
   v_tts_service: !input tts_service
@@ -476,16 +477,12 @@ variables:
   v_bypass_entities: !input bypass_entities
 
 # Purpose-specific triggers ignore unavailable/unknown recovery transitions.
-trigger_variables:
-  v_trigger_debounce_seconds: !input trigger_debounce_seconds
-
 triggers:
   - trigger: door.opened
     target:
       entity_id: !input door_entity
     options:
       behavior: each
-      for: "{{ '00:00:%02d' | format(v_trigger_debounce_seconds | int(1)) }}"
     id: door_opened
 
   - trigger: door.closed
@@ -493,7 +490,6 @@ triggers:
       entity_id: !input door_entity
     options:
       behavior: each
-      for: "{{ '00:00:%02d' | format(v_trigger_debounce_seconds | int(1)) }}"
     id: door_closed
 
   - trigger: window.opened
@@ -501,7 +497,6 @@ triggers:
       entity_id: !input door_entity
     options:
       behavior: each
-      for: "{{ '00:00:%02d' | format(v_trigger_debounce_seconds | int(1)) }}"
     id: door_opened
 
   - trigger: window.closed
@@ -509,7 +504,6 @@ triggers:
       entity_id: !input door_entity
     options:
       behavior: each
-      for: "{{ '00:00:%02d' | format(v_trigger_debounce_seconds | int(1)) }}"
     id: door_closed
 
 actions:
@@ -517,6 +511,19 @@ actions:
   - variables:
       v_triggered_door: "{{ trigger.entity_id }}"
       v_trig_name: "{{ state_attr(trigger.entity_id, 'friendly_name') | default(trigger.entity_id, true) }}"
+
+  # Apply debounce after the event so the blueprint's numeric input remains
+  # configurable. Cancel stale runs if the entity changed again during the wait.
+  - delay:
+      seconds: "{{ v_debounce | int(1) }}"
+
+  - if:
+      - condition: template
+        value_template: >-
+          {{ states(v_triggered_door) != trigger.to_state.state
+             or states[v_triggered_door].last_changed != trigger.to_state.last_changed }}
+    then:
+      - stop: "Türzustand während der Entprellzeit geändert"
 
   - choose:
 
