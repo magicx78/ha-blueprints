@@ -725,10 +725,12 @@ actions:
       v_trig_name: "{{ state_attr(v_door, 'friendly_name') | default(v_door, true) }}"
       v_area: "{{ area_id(v_door) or '' }}"
       v_room_name: "{{ area_name(v_area) if v_area != '' else v_trig_name }}"
-      v_room_entities: "{{ area_entities(v_area) if v_area != '' else [] }}"
-      v_room_thermostats: "{{ v_thermostat_list | select('in', v_room_entities) | list }}"
+      # area_entities() bewusst inline: als eigene Variable stünde die komplette
+      # Entity-Liste des Bereichs in jedem Trace.
+      v_room_thermostats: >-
+        {{ (v_thermostat_list | select('in', area_entities(v_area)) | list) if v_area != '' else [] }}
       v_room_doors: >-
-        {{ (v_door_list | select('in', v_room_entities) | list) if v_area != '' else [v_door] }}
+        {{ (v_door_list | select('in', area_entities(v_area)) | list) if v_area != '' else [v_door] }}
       # legacy = ohne Heizungsprüfung (wie v4), heating = mit Heizungsprüfung,
       # ignore = Tür in einem Raum ohne gewähltes Thermostat
       v_heating_mode: >-
