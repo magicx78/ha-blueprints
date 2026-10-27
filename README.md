@@ -2,7 +2,7 @@
 
 Home Assistant Blueprints von [@magicx78](https://github.com/magicx78)
 
-Alle Blueprints sind validiert (YAML-Syntax + HA-Schema) und erfordern mindestens Home Assistant 2024.6.0. Ausnahmen: GrowWarn benötigt 2024.8.0; mmWave Licht, Tür Alarm Pro, Entity Watchdog und Türöffnung BLE benötigen 2024.10.0. Zuletzt gegen die Release-Notes bis Home Assistant 2026.9 geprüft (2026-09-06).
+Alle Blueprints sind validiert (YAML-Syntax + HA-Schema) und erfordern mindestens Home Assistant 2024.6.0. Ausnahmen: GrowWarn benötigt 2024.8.0; mmWave Licht, Entity Watchdog und Türöffnung BLE benötigen 2024.10.0; Tür Alarm Pro benötigt 2026.7.0. Zuletzt gegen die Release-Notes bis Home Assistant 2026.9 geprüft (2026-09-06).
 
 ---
 
@@ -22,19 +22,33 @@ Meldet Kamera- und Stream-Ausfälle über drei unabhängige Signale: die Kamera-
 
 ---
 
-### Tür offen – Alarm Pro v4
+### Tür offen – Alarm Pro v5 (Heizungs-Wächter)
 
-Vollständiger Tür-Alarm mit TTS und Push-Benachrichtigung. TTS und Push sind getrennt steuerbar mit eigenen Schlafzeiten. Unterstützt Batterie-Warnungen für sowohl numerische Sensoren (`sensor.*` in %) als auch binäre Sensoren (`binary_sensor.*` LOWBAT), jeweils mit mehreren Entities. Wiederholungsansagen und Custom Actions möglich.
+Tür-Alarm mit TTS und Push, der nur meldet, wenn im Raum der offenen Tür die Heizung **wirklich heizt**. Türen in Räumen ohne Heizung bleiben still. Optional schaltet er das Thermostat des Raums nach einer einstellbaren Anzahl Ansagen oder Zeit aus und stellt den vorherigen Zustand wieder her, sobald die Tür zu ist. Eine Automation reicht für das ganze Haus.
 
-**Erfordert: Home Assistant 2024.10.0** (sections-Feature im Blueprint-Editor)
+**Erfordert: Home Assistant 2026.7.0** (Tür-/Fenster-Trigger `door.opened`/`window.opened`)
 
 **Features:**
-- TTS und Push-Benachrichtigung getrennt konfigurierbar
-- Eigene Schlafzeiten für TTS und Push
+- **Heizungsprüfung pro Raum:** Heizungs-Thermostate einmal für das ganze Haus auswählen. Zu einer Tür gehören die gewählten Thermostate im **selben Bereich** wie die Tür.
+- **„Heizt wirklich“** = `hvac_action: heating` (Ventil offen). Ein Thermostat im Modus „heat“, das gerade nichts tut, löst nichts aus. Thermostate ohne `hvac_action` (Wandthermostate, Gruppen) gelten als heizend, wenn sie an sind und Soll > Ist.
+- Springt die Heizung erst an, während die Tür schon offen steht, beginnt die Wartezeit dann.
+- **Heizung ausschalten (optional):** nach X Alarmrunden **oder** Y Minuten ab der ersten Ansage, je nachdem, was zuerst eintritt. Danach kommt eine Ansage „Heizung ausgeschaltet“, dann Ruhe.
+- **Wiederherstellen:** Sind alle Türen des Raums zu, bekommt das Thermostat seinen vorherigen Modus samt Solltemperatur zurück. Hat jemand es zwischendurch selbst wieder eingeschaltet, bleibt diese Einstellung.
+- **Neustartsicher (optional):** mit einem Text-Helfer übersteht die Wiederherstellung auch einen HA-Neustart. Offene Türen werden nach dem Neustart wieder überwacht.
+- TTS über `tts.speak` (TTS-Entität, z. B. Home Assistant Cloud oder Piper) oder wie bisher über einen TTS-Dienst
+- TTS und Push getrennt konfigurierbar, jeweils mit eigener Schlafzeit
 - Batterie-Warnung: numerische und binäre Sensoren, mehrere Entities
 - Wiederholungsansagen mit konfigurierbarem Intervall
 - Custom Actions (vor/nach Alarm)
-- Dankeschön-Ansage nach echtem Alarm-Trigger
+- Danke-Ansage nur nach echtem Alarm
+
+> **Einrichtung:**
+> - Jeder Tür-Sensor und jedes Thermostat muss einem **Bereich** zugeordnet sein (am Entity oder am Gerät). Ein Thermostat ohne Bereich wird keiner Tür zugeordnet.
+> - Nur **Heizungen** auswählen, keine Klimaanlagen. Bei Heizungsgruppen (z. B. Homematic `INT000000x`) besser die einzelnen Ventile wählen, denn die melden `hvac_action`.
+> - Ohne gewählte Thermostate verhält sich das Blueprint wie v4 (jede Tür meldet). Für Türen in Räumen ohne gewähltes Thermostat gibt es die Wahl „ignorieren“ (Standard) oder „immer melden“.
+> - **Merker-Helfer (optional):** Einstellungen → Geräte & Dienste → Helfer → + Helfer → Text, max. Länge 255, z. B. `input_text.tuer_alarm_heizung_merker`. Er enthält nur die gerade abgeschalteten Thermostate (`schluessel=modus:soll;…`) und reicht damit für etwa fünf gleichzeitig. Ohne Helfer wird der Zustand als Szene gemerkt, die einen Neustart nicht übersteht.
+>
+> **Hinweis:** Wird die Automation selbst neu geladen (z. B. nach dem Bearbeiten), werden bereits offene Türen erst nach dem nächsten Öffnen wieder überwacht. Ein Wiederherstellen beim Schließen funktioniert trotzdem.
 
 [![Import Blueprint](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https://raw.githubusercontent.com/magicx78/ha-blueprints/main/blueprints/automation/tuer_alarm_pro.yaml)
 
@@ -196,7 +210,7 @@ Bei Blueprints mit Voraussetzungen (Log Viewer, GrowWarn) zuerst die beschrieben
 |-----------|----------------|
 | Camera Health | 2024.6.0 |
 | Presence & Light v2 | 2024.6.0 |
-| Tür Alarm Pro v4 | 2024.10.0 |
+| Tür Alarm Pro v5 | 2026.7.0 |
 | Automation Log Viewer | 2024.6.0 |
 | GrowWarn | 2024.6.0 |
 | Blueprint mmWave Licht | 2024.10.0 |

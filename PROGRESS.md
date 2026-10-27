@@ -11,7 +11,7 @@ validieren und auf GitHub veröffentlichen.
 | Blueprint | Datei | Domain | Status | Notizen |
 |-----------|-------|--------|--------|---------|
 | Camera Health (Frigate FPS + Unavailable + Pulse Ping) | blueprints/automation/cam_active.yaml | automation | valide | author + min_version 2024.6.0 nachgetragen |
-| Tuer offen Alarm Pro v4.1 | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | v4.1 (2026-09-06): Bool-Fix — in den Schlafzeit- und Batterie-Templates stand im else-Zweig ein literales `false`, das HA als String "false" parst (literal_eval kennt nur True/False); bei deaktivierter Schlafzeit (Default 00:00:00) schlugen dadurch alle `== false`-Vergleiche fehl und TTS/Chime/Push liefen nie. Jetzt `{{ false }}`. Zuvor: author nachgetragen; min_version 2024.10.0 |
+| Tuer offen Alarm Pro v5.0 (Heizungs-Waechter) | blueprints/automation/tuer_alarm_pro.yaml | automation | valide | v5.0 (2026-10-27): Ansage nur, wenn im Raum der Tuer die Heizung heizt (hvac_action heating; ohne hvac_action: an + Soll > Ist). Zuordnung Tuer → Thermostat ueber den Bereich (eine Automation fuers ganze Haus). Optional Thermostat aus nach X Runden ODER Y Minuten, Wiederherstellung per scene.create-Snapshot + optionalem input_text-Merker (neustartsicher), Resume-Event nach HA-Start. tts.speak ueber neue TTS-Entitaet; `omit`-Fehler aus v4 behoben (language wurde leer mitgeschickt). Danke-Ansage per Merker statt Oeffnungsdauer. Alle v4-Input-Keys erhalten, neue Inputs mit Default. v4.2 (2026-10-11): door.opened/window.opened-Trigger, native Zeitbedingungen, min_version 2026.7.0. v4.1 (2026-09-06): Bool-Fix — in den Schlafzeit- und Batterie-Templates stand im else-Zweig ein literales `false`, das HA als String "false" parst (literal_eval kennt nur True/False); bei deaktivierter Schlafzeit (Default 00:00:00) schlugen dadurch alle `== false`-Vergleiche fehl und TTS/Chime/Push liefen nie. Jetzt `{{ false }}`. Zuvor: author nachgetragen; min_version 2024.10.0 |
 | Automation Log Viewer | blueprints/automation/log_viewer.yaml | automation | valide | v1.1.0 (2026-09-06): automation_name + log_level werden als data an shell_command.log_viewer_write_term uebergeben (Log-Level-Filter war vorher reine Deko); Trigger `to:` leer = keine Attribut-Updates; configuration.yaml-Beispiel (shell_command + command_line) als Kommentar in der Datei. Zuvor: author + min_version 2024.6.0 |
 | GrowWarn | blueprints/automation/growwarn.yaml | automation | valide | v1.5.1 (2026-09-06): Binaersensor-Trigger auf `platform: event` (state_changed mit event_data.entity_id) umgestellt — der leere Default '' war als Trigger-entity_id ungueltig (cv.entity_ids) und brach das Laden der ganzen Automation, `enabled:` schuetzt davor nicht; Attribut-Updates loesen keine Tuer-Meldung mehr aus (old/new state verglichen). Stale-Alter robust: `states[x]` liefert bei geloeschter Entitaet None, `None is defined` ist True → as_timestamp warf; jetzt Guard `st is none` → 9999. Totes Feld last_gh1_temp entfernt. v1.5: last_reported, tts.speak-Schema; min_version 2024.8.0 |
 | Blueprint mmWave Licht (Lux/Anwesenheit/Timer/Bypass) | blueprints/automation/mmwave_light.yaml | automation | valide | v1.6.1 (2026-09-08): continue_on_error: true an allen fuenf Schaltaktionen (turn_on/turn_off) - ein Timeout des Ziels (Prod: SwitchBot-Relais ueber Matter, 'Peer is no longer responding') liess die Automation vorher mit Fehler abbrechen. 2026-09-06: presence_light-Verweis aus der Beschreibung entfernt (nur Text, keine Logikaenderung). v1.6.0: Dämmerungs-Binärsensor(en) als neue optionale Dunkelheitsquelle (Mehrfachauswahl, `on` = dunkel, ODER-verknüpft mit Lux; darkness_on-Trigger analog lux_below; Hellwerden schaltet nie aktiv aus). v1.5.1: Trigger-Härtung (unavailable→off startet keinen Off-Timer mehr; Garage not_from unknown/unavailable) + Multi-Helper-Fix (bypass_off/instant_off prüfen verbleibende Helfer). v1.5.0: Garagentore (cover + binary_sensor) mit eigenem Garagenmodus. v1.4.0: mmWave-Sensor optional (Mehrfachauswahl, default []); mind. eine Aktivitätsquelle nötig. v1.3.0: Lux-Trigger (Einschalten bei Dämmerung trotz stehender mmWave-Präsenz). v1.2.0: Lux-Robustheit (leerer/unknown/unavailable Luxsensor = Prüfung aus); Bypass-Neubewertung; activity_active-DRY; Name-Typo behoben. Weiterhin: optionale Bewegungsmelder + Türkontakte; Bypass/Sofort-An/Luxsensor optional |
@@ -24,6 +24,58 @@ validieren und auf GitHub veröffentlichen.
 - wird geprueft
 - valide
 - veroeffentlicht
+
+---
+
+## Aktueller Stand — 2026-10-27 (tuer_alarm_pro v5.0: Heizungs-Waechter, Release 2.1.0)
+
+Nutzerwunsch: Ansagen nur noch, wenn im Raum der offenen Tuer wirklich geheizt
+wird; optional Thermostat nach X Ansagen/Y Minuten aus und beim Schliessen den
+Originalzustand wiederherstellen. Nutzer-Entscheidungen: eine Automation fuers
+ganze Haus (Zuordnung ueber Bereiche), "was zuerst kommt" fuer Runden/Minuten,
+nach dem Abschalten eine Ansage und dann Ruhe, optionaler Merker-Helfer.
+
+- In der Prod-HA (2026.10.4) nutzt keine Automation das Blueprint (used_by leer),
+  der Umbau ist dort also gefahrlos. Trotzdem alle v4-Input-Keys erhalten.
+- Architektur: ein Lauf je Tueroeffnung (mode: parallel). Der Oeffnungs-Lauf
+  wartet per wait_template, bis im Raum geheizt wird (kein climate-Trigger
+  noetig, keine Doppel-Laeufe), dann initial_delay, dann Runden. Eine
+  fehlgeschlagene condition in repeat beendet nur die Runde (script.py:
+  _ConditionFail wird im Sub-Script geschluckt). Zaehler ueber variables im
+  repeat: seit dem ScriptRunVariables-Umbau schreibt variables in den
+  aeussersten Scope, in dem die Variable definiert ist.
+- Wiederherstellen macht ein eigener Schliess-Lauf, nur wenn alle Tueren des
+  Raums 'off' sind und nur fuer Thermostate, die noch 'off' sind (manuelle
+  Aenderung hat Vorrang). Snapshot pro Thermostat (scene_id
+  tuer_alarm_pro_<object_id>), nie ueber einen schon ausgeschalteten Zustand.
+- Merker-Helfer bewusst kein JSON: HA wandelt ein gerendertes JSON in data per
+  literal_eval in ein Dict, input_text.set_value speichert dann die Python-repr.
+  Format `key=modus:soll;...`.
+- Neustart: homeassistant start → 60 s → Event tuer_alarm_pro_resume je Tuer an
+  sich selbst (Filter automation == this.entity_id). Damit bekommt jede Tuer
+  wieder einen eigenen parallelen Lauf.
+- TTS: Aufruf jetzt `data: "{{ dict(v_tts_base, message=...) }}"` (data darf ein
+  Template sein, das ein Dict rendert). Dabei aufgefallen: v4 nutzte `omit`,
+  das es in HA nicht gibt → language wurde leer mitgeschickt.
+- Live gegen Prod-Templates geprueft: Kueche → climate.kuche_int0000005 (Gruppe,
+  ohne hvac_action → Fallback), Schlafzimmer → climate.schlafzimmer_thermostat,
+  Office/Lager → ignoriert. climate.kuchen_thermostat hat keinen Bereich.
+- Verifiziert: yamllint relaxed (nur line-length), CI-Schema-Skript, 156
+  Jinja-Templates geparst, alle Inputs deklariert und benutzt.
+- Live-Test in der Prod-HA bestanden (Test-Automation
+  automation.test_tur_alarm_pro_v5_kuche_schlafzimmer, 20 s / 30 s / aus nach
+  2 Runden). Schlafzimmer-Tuer offen bei 5 °C: keine Ansage. Soll auf 21 °C →
+  Ventil meldet nach ~4 min heating (Homematic-Meldetakt) → 20 s → 1. Ansage →
+  30 s → 2. Ansage → scene.create + hvac_mode off → Ansage "Heizung aus" →
+  Ruhe. Tuer zu → nach 2 s Entprellung scene.turn_on (heat/21 °C zurueck),
+  scene.delete, Ansage "laeuft wieder"; keine doppelte Danke-Ansage. Der
+  Merker-Helfer-Pfad (Neustart) ist nur per Template-Test geprueft.
+- Wechselwirkung: Heiz-Lock-Automation (lock_on) reagiert auf das
+  Wiedereinschalten, setzt aber nur input_boolean.heizung_an_aus auf on - war
+  ohnehin on, kein Konflikt.
+- Nachtrag nach dem Test: area_entities() inline statt als Variable, sonst
+  steht die komplette Entity-Liste des Bereichs in jedem Trace.
+- VERSION 2.0.1 -> 2.1.0.
 
 ---
 

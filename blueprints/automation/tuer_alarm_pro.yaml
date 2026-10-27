@@ -1,16 +1,21 @@
 blueprint:
-  name: "🚪 Tür offen – Alarm Pro v4.2"
+  name: "🚪 Tür offen – Alarm Pro v5 (Heizungs-Wächter)"
   description: >
-    🏠 Vollständiger Tür-Alarm mit TTS & Push.
-    ✅ Danke-Ansage nur nach echtem Alarm-Trigger.
+    🏠 Tür-Alarm mit TTS & Push – meldet nur, wenn im Raum der Tür die Heizung wirklich heizt.
+    🔥 v5: Heizungs-Thermostate einmal für das ganze Haus wählen. Zu einer Tür gehören die
+    gewählten Thermostate im selben Bereich. Türen in Räumen ohne Heizung bleiben still.
+    "Heizt" heißt: hvac_action = heating (Ventil offen). Thermostate ohne hvac_action
+    (z. B. Wandthermostate, Gruppen) gelten als heizend, wenn sie an sind und Soll > Ist.
+    ⏻ Optional: Thermostat nach X Alarmrunden ODER Y Minuten (was zuerst kommt) ausschalten.
+    Sind alle Türen des Raums wieder zu, wird der ursprüngliche Modus samt Solltemperatur
+    wiederhergestellt (Szenen-Snapshot, optional neustartsicher über einen input_text-Helfer).
+    ✅ Danke-Ansage nur nach echtem Alarm (Merker statt Öffnungsdauer).
+    🗣️ Neu: moderne Sprachausgabe über tts.speak (TTS-Entität), alter TTS-Dienst bleibt möglich.
     🔇 TTS & Push getrennt steuerbar mit eigenen Schlafzeiten.
     🔋 Batterie-Warnung: sensor.* (%) UND binary_sensor.* (LOWBAT) – mehrere Entities möglich.
     🔁 Wiederholungsansagen mit Custom Actions.
-    🐛 v4: Bugfixes – Tür-TTS zuerst, dann Batterie; Boolean-String-Fix; Batterie multi-Entity.
-    🐛 v4.1: Bool-Fix für Schlafzeit und Batterie.
-    🛠️ v4.2: Aktuelle Tür-/Fenster-Trigger, native Zeitbedingungen, Batterie-Warnungen beachten
-    jetzt ebenfalls die Schlafzeiten. Vorhandene Input-IDs bleiben erhalten.
-    Home Assistant 2026.7 oder neuer.
+    Ohne gewählte Thermostate verhält sich das Blueprint wie v4 (jede Tür meldet).
+    Alle Input-IDs aus v4 bleiben erhalten. Home Assistant 2026.7 oder neuer.
   domain: automation
   author: "magicx78"
   source_url: https://github.com/magicx78/ha-blueprints/blob/main/blueprints/automation/tuer_alarm_pro.yaml
@@ -28,7 +33,10 @@ blueprint:
       input:
         door_entity:
           name: "🚪 Tür-Sensor(en)"
-          description: "Tür- oder Fenster-Binärsensoren mit passender Geräteklasse"
+          description: >
+            Tür- oder Fenster-Binärsensoren mit passender Geräteklasse – für das ganze Haus.
+            Damit die Heizungsprüfung greift, muss jeder Sensor (oder sein Gerät) einem Bereich
+            zugeordnet sein.
           selector:
             entity:
               filter:
@@ -40,7 +48,9 @@ blueprint:
 
         initial_delay:
           name: "⏱️ Wartezeit bis erste Ansage (Sekunden)"
-          description: "Wie lange soll gewartet werden bevor der Alarm ausgelöst wird?"
+          description: >
+            So lange muss die Tür offen sein, während im Raum geheizt wird, bevor der Alarm
+            auslöst. Springt die Heizung erst später an, beginnt die Wartezeit dann.
           default: 60
           selector:
             number:
@@ -61,7 +71,111 @@ blueprint:
               mode: slider
 
     # ════════════════════════════════════════════════════════
-    # SEKTION 2: 🔊 Sprachausgabe (TTS)
+    # SEKTION 2: 🔥 Heizung
+    # ════════════════════════════════════════════════════════
+    section_heating:
+      name: "🔥 Heizung"
+      icon: mdi:radiator
+      input:
+        heating_thermostats:
+          name: "🌡️ Heizungs-Thermostate"
+          description: >
+            Alle Heizkörper-Thermostate, die überwacht werden sollen – für das ganze Haus.
+            Zu einer Tür gehören die hier gewählten Thermostate im selben Bereich wie die Tür.
+            Nur echte Heizungen wählen, keine Klimaanlagen. Am besten die einzelnen Ventile
+            wählen, die melden, ob gerade geheizt wird (hvac_action), statt Gruppen.
+            Leer lassen = Verhalten wie v4: jede Tür meldet, ohne Heizungsprüfung.
+          default: []
+          selector:
+            entity:
+              filter:
+                domain: climate
+              multiple: true
+
+        doors_without_heating:
+          name: "🚪 Türen ohne Thermostat im Raum"
+          description: >
+            Was passiert bei Türen, in deren Bereich keines der gewählten Thermostate liegt?
+            Wirkt nur, wenn oben Thermostate gewählt sind.
+          default: "ignore"
+          selector:
+            select:
+              options:
+                - label: "🔕 Ignorieren (keine Ansage)"
+                  value: "ignore"
+                - label: "🔔 Immer melden (wie v4)"
+                  value: "always"
+
+        heating_off_enabled:
+          name: "⏻ Heizung bei offener Tür ausschalten"
+          description: >
+            Schaltet die Thermostate des Raums aus (hvac_mode off), wenn eines der beiden
+            Kriterien unten erreicht ist. Danach kommt eine Ansage, dann Ruhe. Sind alle Türen
+            des Raums wieder zu, wird der vorherige Zustand wiederhergestellt.
+          default: false
+          selector:
+            boolean: {}
+
+        heating_off_after_count:
+          name: "🔢 Ausschalten nach Anzahl Alarmrunden"
+          description: >
+            Erste Ansage + Wiederholungen. Runden in der Schlafzeit zählen mit, damit nachts
+            trotzdem abgeschaltet wird. 0 = Kriterium aus.
+          default: 3
+          selector:
+            number:
+              min: 0
+              max: 20
+              mode: box
+
+        heating_off_after_minutes:
+          name: "⏲️ Ausschalten nach Minuten (ab erster Ansage)"
+          description: "0 = Kriterium aus. Es gilt, was zuerst eintritt."
+          default: 15
+          selector:
+            number:
+              min: 0
+              max: 240
+              unit_of_measurement: "Min"
+              mode: box
+
+        heating_state_helper:
+          name: "💾 Merker-Helfer (optional, neustartsicher)"
+          description: >
+            Ohne Helfer wird der vorherige Zustand als Szene gemerkt – die geht bei einem
+            HA-Neustart verloren. Mit einem Text-Helfer (input_text, max. 255 Zeichen) übersteht
+            die Wiederherstellung auch einen Neustart. Den Helfer nur für dieses Blueprint nutzen.
+          default: ""
+          selector:
+            entity:
+              filter:
+                domain: input_text
+
+        notify_heating:
+          name: "📲 Push bei Heizung aus / wieder an"
+          description: "Nutzt die Push-Einstellungen aus der Sektion 'Push-Benachrichtigung'."
+          default: true
+          selector:
+            boolean: {}
+
+        message_heating_off:
+          name: "💬 Ansage: Heizung ausgeschaltet"
+          description: "Platzhalter: {trigger_name}, {room_name}"
+          default: "Die Heizung im Raum {room_name} wurde ausgeschaltet, weil die {trigger_name} offen ist."
+          selector:
+            text:
+              multiline: true
+
+        message_heating_restored:
+          name: "💬 Ansage: Heizung wieder an"
+          description: "Platzhalter: {trigger_name}, {room_name}"
+          default: "Danke! Die {trigger_name} ist zu. Die Heizung im Raum {room_name} läuft wieder."
+          selector:
+            text:
+              multiline: true
+
+    # ════════════════════════════════════════════════════════
+    # SEKTION 3: 🔊 Sprachausgabe (TTS)
     # ════════════════════════════════════════════════════════
     section_tts:
       name: "🔊 Sprachausgabe (TTS)"
@@ -82,9 +196,20 @@ blueprint:
                 domain: media_player
               multiple: true
 
+        tts_entity:
+          name: "🗣️ TTS-Entität (empfohlen)"
+          description: >
+            Moderne Sprachausgabe über tts.speak, z. B. tts.home_assistant_cloud oder tts.piper.
+            Wenn gesetzt, wird der 'TTS Service' darunter ignoriert.
+          default: ""
+          selector:
+            entity:
+              filter:
+                domain: tts
+
         tts_service:
-          name: "⚙️ TTS Service"
-          description: "Welcher TTS-Dienst? z.B. tts.cloud_say (Nabu Casa) oder tts.google_translate_say"
+          name: "⚙️ TTS Service (alt)"
+          description: "Nur ohne TTS-Entität: z.B. tts.cloud_say (Nabu Casa) oder tts.google_translate_say"
           default: "tts.cloud_say"
           selector:
             select:
@@ -103,7 +228,7 @@ blueprint:
 
         message_first:
           name: "💬 Erste Ansage"
-          description: "Platzhalter: {trigger_name}"
+          description: "Platzhalter: {trigger_name}, {room_name}"
           default: "Achtung! Die {trigger_name} ist offen."
           selector:
             text:
@@ -111,7 +236,7 @@ blueprint:
 
         message_repeat:
           name: "🔁 Wiederholungs-Ansage"
-          description: "Platzhalter: {trigger_name}, {open_minutes}"
+          description: "Platzhalter: {trigger_name}, {room_name}, {open_minutes}"
           default: "Achtung! {trigger_name} ist seit {open_minutes} Minuten offen! Bitte schließen!"
           selector:
             text:
@@ -119,7 +244,7 @@ blueprint:
 
         message_closed:
           name: "🙏 Danke-Ansage (beim Schließen)"
-          description: "Platzhalter: {trigger_name}"
+          description: "Platzhalter: {trigger_name}, {room_name}"
           default: "Danke! Die {trigger_name} wurde geschlossen."
           selector:
             text:
@@ -129,7 +254,8 @@ blueprint:
           name: "🙏 Wann soll die Danke-Ansage kommen?"
           description: >
             'Immer' = bei jedem Schließen der Tür (auch wenn kein Alarm ausgelöst wurde).
-            'Nur nach Alarm' = nur wenn vorher wirklich eine Alarm-Ansage erfolgte.
+            'Nur nach Alarm' = nur wenn vorher wirklich eine Alarmrunde lief.
+            Wurde die Heizung ausgeschaltet, kommt statt dessen die Ansage 'Heizung wieder an'.
           default: "nur_nach_alarm"
           selector:
             select:
@@ -155,7 +281,7 @@ blueprint:
             time: {}
 
     # ════════════════════════════════════════════════════════
-    # SEKTION 3: 🔔 Chime
+    # SEKTION 4: 🔔 Chime
     # ════════════════════════════════════════════════════════
     section_chime:
       name: "🔔 Chime (Ton vor Ansage)"
@@ -195,7 +321,7 @@ blueprint:
               unit_of_measurement: "Sek"
 
     # ════════════════════════════════════════════════════════
-    # SEKTION 4: 🔁 Wiederholung
+    # SEKTION 5: 🔁 Wiederholung
     # ════════════════════════════════════════════════════════
     section_repeat:
       name: "🔁 Wiederholung"
@@ -203,6 +329,9 @@ blueprint:
       input:
         repeat_enabled:
           name: "🔁 Wiederholung aktivieren"
+          description: >
+            Aus = nur die erste Ansage. Die Alarmrunden laufen trotzdem still weiter, damit das
+            Ausschalten der Heizung nach Anzahl Runden funktioniert.
           default: true
           selector:
             boolean: {}
@@ -218,7 +347,7 @@ blueprint:
               mode: box
 
     # ════════════════════════════════════════════════════════
-    # SEKTION 5: 📲 Push-Benachrichtigung
+    # SEKTION 6: 📲 Push-Benachrichtigung
     # ════════════════════════════════════════════════════════
     section_notify:
       name: "📲 Push-Benachrichtigung (optional)"
@@ -240,14 +369,14 @@ blueprint:
 
         notify_title:
           name: "📌 Push-Titel"
-          description: "Platzhalter: {trigger_name}"
+          description: "Platzhalter: {trigger_name}, {room_name}"
           default: "🚪 Tür offen: {trigger_name}"
           selector:
             text: {}
 
         notify_message:
           name: "💬 Push-Nachricht"
-          description: "Platzhalter: {trigger_name}, {open_minutes}"
+          description: "Platzhalter: {trigger_name}, {room_name}, {open_minutes}"
           default: "Die {trigger_name} steht seit {open_minutes} Minuten offen!"
           selector:
             text:
@@ -284,7 +413,7 @@ blueprint:
             time: {}
 
     # ════════════════════════════════════════════════════════
-    # SEKTION 6: 🔋 Batterie-Warnung
+    # SEKTION 7: 🔋 Batterie-Warnung
     # ════════════════════════════════════════════════════════
     section_battery:
       name: "🔋 Batterie-Warnung (optional)"
@@ -379,7 +508,7 @@ blueprint:
                   value: "passive"
 
     # ════════════════════════════════════════════════════════
-    # SEKTION 7: ⚙️ Bypass & Deaktivierung
+    # SEKTION 8: ⚙️ Bypass & Deaktivierung
     # ════════════════════════════════════════════════════════
     section_control:
       name: "⚙️ Bypass & Deaktivierung"
@@ -388,7 +517,9 @@ blueprint:
       input:
         disable_switch:
           name: "🔴 Deaktivierungs-Schalter (optional)"
-          description: "input_boolean – wenn 'on', wird die gesamte Automation deaktiviert"
+          description: >
+            input_boolean – wenn 'on', gibt es keine Alarme und keine Abschaltung.
+            Das Wiederherstellen der Heizung läuft trotzdem.
           default: ""
           selector:
             entity:
@@ -397,14 +528,16 @@ blueprint:
 
         bypass_entities:
           name: "🛡️ Bypass-Entities (optional)"
-          description: "Wenn eine dieser Entities 'on' ist, wird kein Alarm ausgelöst (z.B. Anwesenheit, Urlaub)"
+          description: >
+            Wenn eine dieser Entities 'on' ist, wird kein Alarm ausgelöst (z.B. Anwesenheit, Urlaub).
+            Das Wiederherstellen der Heizung läuft trotzdem.
           default: []
           selector:
             entity:
               multiple: true
 
     # ════════════════════════════════════════════════════════
-    # SEKTION 8: 🎬 Custom Actions
+    # SEKTION 9: 🎬 Custom Actions
     # ════════════════════════════════════════════════════════
     section_custom_actions:
       name: "🎬 Custom Actions (optional)"
@@ -426,18 +559,51 @@ blueprint:
 # ════════════════════════════════════════════════════════════════════════════════
 # AUTOMATION ENGINE
 # ════════════════════════════════════════════════════════════════════════════════
+#
+# Ein Lauf je Türöffnung (mode: parallel). Der Öffnungs-Lauf wartet, bis im Raum
+# geheizt wird, alarmiert und schaltet ggf. ab. Das Schließen startet einen eigenen
+# Lauf, der wiederherstellt. Nach einem HA-Neustart feuert die Automation für jede
+# Tür das Event tuer_alarm_pro_resume an sich selbst, damit offene Türen wieder
+# überwacht und geschlossene Räume wiederhergestellt werden.
 
 mode: parallel
-max: 20
+max: 50
 max_exceeded: silent
 
 variables:
+  v_door_input: !input door_entity
+  v_door_list: "{{ [v_door_input] if v_door_input is string else v_door_input }}"
   v_initial_delay: !input initial_delay
   v_debounce: !input trigger_debounce_seconds
+  v_thermostats: !input heating_thermostats
+  v_thermostat_list: "{{ [v_thermostats] if v_thermostats is string else v_thermostats }}"
+  v_doors_without_heating: !input doors_without_heating
+  v_heat_off_enabled: !input heating_off_enabled
+  v_heat_off_count: !input heating_off_after_count
+  v_heat_off_minutes: !input heating_off_after_minutes
+  v_state_helper: !input heating_state_helper
+  v_notify_heating: !input notify_heating
+  v_msg_heating_off: !input message_heating_off
+  v_msg_heating_restored: !input message_heating_restored
   v_tts_enabled: !input tts_enabled
   v_media_players: !input media_player_entity
+  v_tts_entity: !input tts_entity
   v_tts_service: !input tts_service
   v_tts_language: !input tts_language
+  # tts.speak (TTS-Entität) oder alter say-Dienst; die Daten werden als Dict
+  # gebaut, damit language nur gesendet wird, wenn sie gesetzt ist.
+  v_tts_action: "{{ 'tts.speak' if v_tts_entity not in ['', none] else v_tts_service }}"
+  v_tts_base: >-
+    {%- set d = {'cache': false} -%}
+    {%- if v_tts_entity not in ['', none] -%}
+      {%- set d = dict(d, entity_id=v_tts_entity, media_player_entity_id=v_media_players) -%}
+    {%- else -%}
+      {%- set d = dict(d, entity_id=v_media_players) -%}
+    {%- endif -%}
+    {%- if v_tts_language not in ['', none] -%}
+      {%- set d = dict(d, language=v_tts_language) -%}
+    {%- endif -%}
+    {{ d }}
   v_msg_first: !input message_first
   v_msg_repeat: !input message_repeat
   v_msg_closed: !input message_closed
@@ -455,6 +621,7 @@ variables:
   v_repeat_interval: !input repeat_interval
   v_notify_enabled: !input notify_enabled
   v_notify_services: !input notify_services
+  v_notify_list: "{{ v_notify_services.split(',') | map('trim') | reject('eq', '') | list }}"
   v_notify_title: !input notify_title
   v_notify_message: !input notify_message
   v_notify_level: !input notify_interruption_level
@@ -506,151 +673,212 @@ triggers:
       behavior: each
     id: door_closed
 
+  - trigger: homeassistant
+    event: start
+    id: ha_start
+
+  - trigger: event
+    event_type: tuer_alarm_pro_resume
+    id: resume
+
 actions:
+  # ── Neustart: jede Tür über ein Event an sich selbst neu einlesen ────────
+  # Ein Event je Tür, damit jede Tür wieder ihren eigenen parallelen Lauf
+  # bekommt. 60 s Vorlauf, bis Funk-Integrationen ihre Zustände geladen haben.
+  - if:
+      - condition: trigger
+        id: ha_start
+    then:
+      - delay:
+          seconds: 60
+      - repeat:
+          for_each: "{{ v_door_list }}"
+          sequence:
+            - event: tuer_alarm_pro_resume
+              event_data:
+                automation: "{{ this.entity_id }}"
+                entity_id: "{{ repeat.item }}"
+      - stop: "🔄 Neustart: Türen neu eingelesen"
+
+  - if:
+      - condition: trigger
+        id: resume
+      - condition: template
+        value_template: >-
+          {{ trigger.event.data.automation != this.entity_id
+             or trigger.event.data.entity_id not in v_door_list }}
+    then:
+      - stop: "Resume-Event einer anderen Automation"
+
   # ── Laufzeit-Variablen ────────────────────────────────────────────────────
   - variables:
-      v_triggered_door: "{{ trigger.entity_id }}"
-      v_trig_name: "{{ state_attr(trigger.entity_id, 'friendly_name') | default(trigger.entity_id, true) }}"
-
-  # Apply debounce after the event so the blueprint's numeric input remains
-  # configurable. Cancel stale runs if the entity changed again during the wait.
-  - delay:
-      seconds: "{{ v_debounce | int(1) }}"
+      v_door: >-
+        {{ trigger.event.data.entity_id if trigger.id == 'resume' else trigger.entity_id }}
+      v_event: >-
+        {%- if trigger.id == 'resume' -%}
+          {%- if is_state(v_door, 'on') -%}door_opened
+          {%- elif is_state(v_door, 'off') -%}door_closed
+          {%- else -%}none{%- endif -%}
+        {%- else -%}
+          {{ trigger.id }}
+        {%- endif -%}
+      v_trig_name: "{{ state_attr(v_door, 'friendly_name') | default(v_door, true) }}"
+      v_area: "{{ area_id(v_door) or '' }}"
+      v_room_name: "{{ area_name(v_area) if v_area != '' else v_trig_name }}"
+      # area_entities() bewusst inline: als eigene Variable stünde die komplette
+      # Entity-Liste des Bereichs in jedem Trace.
+      v_room_thermostats: >-
+        {{ (v_thermostat_list | select('in', area_entities(v_area)) | list) if v_area != '' else [] }}
+      v_room_doors: >-
+        {{ (v_door_list | select('in', area_entities(v_area)) | list) if v_area != '' else [v_door] }}
+      # legacy = ohne Heizungsprüfung (wie v4), heating = mit Heizungsprüfung,
+      # ignore = Tür in einem Raum ohne gewähltes Thermostat
+      v_heating_mode: >-
+        {%- if v_thermostat_list | count == 0 -%}legacy
+        {%- elif v_room_thermostats | count > 0 -%}heating
+        {%- elif v_doors_without_heating == 'always' -%}legacy
+        {%- else -%}ignore{%- endif -%}
 
   - if:
       - condition: template
-        value_template: >-
-          {{ states(v_triggered_door) != trigger.to_state.state
-             or states[v_triggered_door].last_changed != trigger.to_state.last_changed }}
+        value_template: "{{ v_event not in ['door_opened', 'door_closed'] }}"
     then:
-      - stop: "Türzustand während der Entprellzeit geändert"
+      - stop: "Türzustand unklar (unavailable/unknown)"
+
+  - if:
+      - condition: template
+        value_template: "{{ v_heating_mode == 'ignore' }}"
+    then:
+      - stop: "🔕 Kein Heizungs-Thermostat im Bereich der Tür – ignoriert"
+
+  # Apply debounce after the event so the blueprint's numeric input remains
+  # configurable. Cancel stale runs if the entity changed again during the wait.
+  - if:
+      - condition: template
+        value_template: "{{ trigger.id != 'resume' }}"
+    then:
+      - delay:
+          seconds: "{{ v_debounce | int(1) }}"
+
+      - if:
+          - condition: template
+            value_template: >-
+              {{ states(v_door) != trigger.to_state.state
+                 or states[v_door].last_changed != trigger.to_state.last_changed }}
+        then:
+          - stop: "Türzustand während der Entprellzeit geändert"
 
   - choose:
 
       # ╔══════════════════════════════════════════════════════════════════════╗
-      # ║  PFAD A: Tür geschlossen                                             ║
+      # ║  PFAD A: Tür geschlossen – Heizung wiederherstellen                  ║
       # ╚══════════════════════════════════════════════════════════════════════╝
       - conditions:
-          - condition: trigger
-            id: door_closed
+          - condition: template
+            value_template: "{{ v_event == 'door_closed' }}"
         sequence:
-          # Danke-Ansage:
-          # - Modus "immer": immer beim Schließen
-          # - Modus "nur_nach_alarm": nur wenn die Tür länger offen war als initial_delay
-          #   (Fix: zuverlässig trotz mode: restart, weil door_closed immer ein neuer Lauf ist)
+          # Wiederherstellen nur, wenn alle Türen des Raums wirklich zu sind
+          # (unavailable zählt nicht als zu).
           - variables:
-              v_open_seconds_before_close: >-
-                {% if trigger.from_state is not none %}
-                  {{ (as_timestamp(now()) - as_timestamp(trigger.from_state.last_changed)) | int(0) }}
-                {% else %}
-                  0
-                {% endif %}
-              v_was_alarm: >-
-                {{ v_open_seconds_before_close >= (v_initial_delay | int(60)) }}
+              v_room_closed: "{{ v_room_doors | reject('is_state', 'off') | list | count == 0 }}"
+              v_helper_raw: "{{ states(v_state_helper) if v_state_helper not in ['', none] else '' }}"
+              v_restored: []
 
           - if:
               - condition: template
-                value_template: >-
-                  {{
-                    v_tts_enabled == true
-                    and (
-                      v_thank_you_mode == 'immer'
-                      or (v_thank_you_mode == 'nur_nach_alarm' and v_was_alarm == true)
-                    )
-                  }}
+                value_template: "{{ v_heating_mode == 'heating' and v_room_closed }}"
             then:
-              - if:
-                  - condition: or
-                    conditions:
-                      - condition: template
-                        value_template: "{{ v_tts_sleep_disabled }}"
-                      - condition: not
-                        conditions:
-                          - condition: time
-                            after: !input tts_sleep_start
-                            before: !input tts_sleep_end
-                then:
-                  - action: "{{ v_tts_service }}"
-                    data:
-                      entity_id: "{{ v_media_players }}"
-                      message: >-
-                        {{ v_msg_closed | replace('{trigger_name}', v_trig_name) }}
-                      language: >-
-                        {{ v_tts_language if v_tts_language != '' else omit }}
-                      cache: false
+              - repeat:
+                  for_each: "{{ v_room_thermostats }}"
+                  sequence:
+                    - variables:
+                        v_th: "{{ repeat.item }}"
+                        v_th_key: "{{ repeat.item.split('.', 1)[1] }}"
+                        v_th_scene: "scene.tuer_alarm_pro_{{ repeat.item.split('.', 1)[1] }}"
+                    - variables:
+                        v_th_has_scene: "{{ states[v_th_scene] is not none }}"
+                        v_th_entry: >-
+                          {{ v_helper_raw.split(';')
+                             | select('search', '^' ~ v_th_key ~ '=')
+                             | first | default('') }}
 
-          - choose: []
-            default: !input action_on_close
+                    # Nur zurückstellen, wenn das Thermostat noch aus ist –
+                    # eine manuelle Änderung zwischendurch hat Vorrang.
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_th_has_scene }}"
+                      then:
+                        - if:
+                            - condition: template
+                              value_template: "{{ is_state(v_th, 'off') }}"
+                          then:
+                            - action: scene.turn_on
+                              target:
+                                entity_id: "{{ v_th_scene }}"
+                              continue_on_error: true
+                            - variables:
+                                v_restored: "{{ v_restored + [v_th] }}"
+                        - action: scene.delete
+                          target:
+                            entity_id: "{{ v_th_scene }}"
+                          continue_on_error: true
+                      else:
+                        # Szene nach Neustart weg → Werte aus dem Merker-Helfer
+                        - if:
+                            - condition: template
+                              value_template: "{{ v_th_entry != '' and is_state(v_th, 'off') }}"
+                          then:
+                            - variables:
+                                v_th_mode: "{{ v_th_entry.split('=', 1)[1].split(':')[0] }}"
+                                v_th_temp: "{{ (v_th_entry.split('=', 1)[1].split(':') + [''])[1] }}"
+                            - if:
+                                - condition: template
+                                  value_template: "{{ v_th_mode not in ['', 'off'] }}"
+                              then:
+                                - action: climate.set_hvac_mode
+                                  target:
+                                    entity_id: "{{ v_th }}"
+                                  data:
+                                    hvac_mode: "{{ v_th_mode }}"
+                                  continue_on_error: true
+                                - if:
+                                    - condition: template
+                                      value_template: "{{ v_th_mode != 'auto' and is_number(v_th_temp) }}"
+                                  then:
+                                    - action: climate.set_temperature
+                                      target:
+                                        entity_id: "{{ v_th }}"
+                                      data:
+                                        temperature: "{{ v_th_temp | float }}"
+                                      continue_on_error: true
+                                - variables:
+                                    v_restored: "{{ v_restored + [v_th] }}"
 
-          - stop: "✅ Tür geschlossen – Ende (Modus: immer)"
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_th_entry != '' }}"
+                      then:
+                        - action: input_text.set_value
+                          target:
+                            entity_id: "{{ v_state_helper }}"
+                          data:
+                            value: >-
+                              {{ states(v_state_helper).split(';')
+                                 | select('search', '=')
+                                 | reject('search', '^' ~ v_th_key ~ '=')
+                                 | join(';') }}
+                          continue_on_error: true
 
-      # ╔══════════════════════════════════════════════════════════════════════╗
-      # ║  PFAD B: Tür geöffnet                                                ║
-      # ╚══════════════════════════════════════════════════════════════════════╝
-      - conditions:
-          - condition: trigger
-            id: door_opened
-        sequence:
-
-          # ── 1. Deaktivierungs-Schalter prüfen ────────────────────────────
           - if:
               - condition: template
-                value_template: >-
-                  {{ v_disable_switch != '' and states(v_disable_switch) == 'on' }}
+                value_template: "{{ v_restored | count > 0 }}"
             then:
-              - stop: "🔴 Automation durch Schalter deaktiviert"
+              - variables:
+                  v_msg: >-
+                    {{ v_msg_heating_restored
+                       | replace('{trigger_name}', v_trig_name)
+                       | replace('{room_name}', v_room_name) }}
 
-          # ── 2. Bypass-Entities prüfen ─────────────────────────────────────
-          - if:
-              - condition: template
-                value_template: >-
-                  {{ v_bypass_entities | select('is_state', 'on') | list | count > 0 }}
-            then:
-              - stop: "🛡️ Bypass aktiv – kein Alarm"
-
-          # ── 3. Wartezeit ──────────────────────────────────────────────────
-          - delay:
-              seconds: "{{ v_initial_delay | int(60) }}"
-
-          # ── 4. Tür noch offen? ────────────────────────────────────────────
-          - if:
-              - condition: template
-                value_template: "{{ states(v_triggered_door) == 'on' }}"
-            then:
-
-              # ── 4a. Schalter & Bypass erneut prüfen ───────────────────────
-              - if:
-                  - condition: template
-                    value_template: >-
-                      {{ (v_disable_switch != '' and states(v_disable_switch) == 'on')
-                         or (v_bypass_entities | select('is_state', 'on') | list | count > 0) }}
-                then:
-                  - stop: "🛡️ Schalter/Bypass nach Delay aktiv"
-
-              # ── 4c. Chime abspielen ───────────────────────────────────────
-              - if:
-                  - condition: template
-                    value_template: "{{ v_tts_enabled == true and v_chime_url != '' }}"
-                  - condition: or
-                    conditions:
-                      - condition: template
-                        value_template: "{{ v_tts_sleep_disabled }}"
-                      - condition: not
-                        conditions:
-                          - condition: time
-                            after: !input tts_sleep_start
-                            before: !input tts_sleep_end
-                then:
-                  - action: media_player.play_media
-                    target:
-                      entity_id: "{{ v_media_players }}"
-                    data:
-                      media_content_id: "{{ v_chime_url }}"
-                      media_content_type: "{{ v_chime_type }}"
-                  - delay:
-                      seconds: "{{ v_chime_wait | int(2) }}"
-
-              # ── 4d. Erste TTS-Ansage (Tür offen) ─────────────────────────
               - if:
                   - condition: template
                     value_template: "{{ v_tts_enabled == true }}"
@@ -664,20 +892,15 @@ actions:
                             after: !input tts_sleep_start
                             before: !input tts_sleep_end
                 then:
-                  - action: "{{ v_tts_service }}"
-                    data:
-                      entity_id: "{{ v_media_players }}"
-                      message: >-
-                        {{ v_msg_first | replace('{trigger_name}', v_trig_name) }}
-                      language: >-
-                        {{ v_tts_language if v_tts_language != '' else omit }}
-                      cache: false
+                  - action: "{{ v_tts_action }}"
+                    data: "{{ dict(v_tts_base, message=v_msg) }}"
+                    continue_on_error: true
 
-              # ── 4e. Erste Push-Benachrichtigung (Tür offen) ───────────────
               - if:
                   - condition: template
                     value_template: >-
-                      {{ v_notify_enabled == true and v_notify_services != '' }}
+                      {{ v_notify_heating == true and v_notify_enabled == true
+                         and v_notify_list | count > 0 }}
                   - condition: or
                     conditions:
                       - condition: template
@@ -689,225 +912,495 @@ actions:
                             before: !input push_sleep_end
                 then:
                   - repeat:
-                      for_each: "{{ v_notify_services.split(',') | map('trim') | list }}"
+                      for_each: "{{ v_notify_list }}"
                       sequence:
                         - action: "{{ repeat.item }}"
                           data:
-                            title: >-
-                              {{ v_notify_title
-                                 | replace('{trigger_name}', v_trig_name)
-                                 | replace('{open_minutes}', '0') }}
-                            message: >-
-                              {{ v_notify_message
-                                 | replace('{trigger_name}', v_trig_name)
-                                 | replace('{open_minutes}', '0') }}
+                            title: "🔥 Heizung wieder an: {{ v_room_name }}"
+                            message: "{{ v_msg }}"
                             data:
                               push:
                                 interruption-level: "{{ v_notify_level }}"
-
-              # ── 4f. Custom Action (Tür auf) ───────────────────────────────
-              - choose: []
-                default: !input action_on_open
-
-              # ── 4g. Batterie-Check NACH Tür-Ansage ───────────────────────
+                          continue_on_error: true
+            else:
+              # Danke-Ansage "immer" kommt aus diesem Lauf. "Nur nach Alarm"
+              # übernimmt der Öffnungs-Lauf, weil nur er weiß, ob alarmiert wurde.
               - if:
                   - condition: template
-                    value_template: >-
-                      {{ v_battery_warn_enabled == true and v_battery_sensors | list | count > 0 }}
+                    value_template: "{{ v_tts_enabled == true and v_thank_you_mode == 'immer' }}"
+                  - condition: or
+                    conditions:
+                      - condition: template
+                        value_template: "{{ v_tts_sleep_disabled }}"
+                      - condition: not
+                        conditions:
+                          - condition: time
+                            after: !input tts_sleep_start
+                            before: !input tts_sleep_end
                 then:
-                  - delay:
-                      seconds: 4
+                  - action: "{{ v_tts_action }}"
+                    data: >-
+                      {{ dict(v_tts_base, message=(v_msg_closed
+                                                   | replace('{trigger_name}', v_trig_name)
+                                                   | replace('{room_name}', v_room_name))) }}
+                    continue_on_error: true
 
-                  - repeat:
-                      for_each: "{{ v_battery_sensors if v_battery_sensors is list else [v_battery_sensors] }}"
-                      sequence:
-                        - variables:
-                            batt_entity: "{{ repeat.item }}"
-                            batt_name: "{{ state_attr(repeat.item, 'friendly_name') | default(repeat.item) }}"
-                            v_batt_triggered: >-
-                              {% if states(batt_entity) not in ['unavailable', 'unknown', ''] %}
-                                {% if batt_entity.startswith('binary_sensor.') %}
-                                  {{ states(batt_entity) == 'on' }}
-                                {% else %}
-                                  {{ states(batt_entity) | int(100) < v_battery_threshold | int(20) }}
-                                {% endif %}
-                              {% else %}
-                                {{ false }}
-                              {% endif %}
-                            v_batt_level: >-
-                              {% if states(batt_entity) not in ['unavailable', 'unknown', ''] %}
-                                {% if batt_entity.startswith('binary_sensor.') %}
-                                  leer (LOWBAT)
-                                {% else %}
-                                  {{ states(batt_entity) | int(0) }}%
-                                {% endif %}
-                              {% else %}
-                                unbekannt
-                              {% endif %}
+          - choose: []
+            default: !input action_on_close
 
-                        - if:
-                            - condition: template
-                              value_template: "{{ v_batt_triggered == true }}"
-                          then:
+          - stop: "✅ Tür geschlossen"
 
-                            # Batterie-Push
-                            - if:
-                                - condition: template
-                                  value_template: >-
-                                    {{ v_battery_notify_push == true and v_notify_enabled == true and v_notify_services != '' }}
-                                - condition: or
-                                  conditions:
-                                    - condition: template
-                                      value_template: "{{ v_push_sleep_disabled }}"
-                                    - condition: not
-                                      conditions:
-                                        - condition: time
-                                          after: !input push_sleep_start
-                                          before: !input push_sleep_end
-                              then:
-                                - repeat:
-                                    for_each: "{{ v_notify_services.split(',') | map('trim') | list }}"
-                                    sequence:
-                                      - action: "{{ repeat.item }}"
-                                        data:
-                                          title: >-
-                                            {{ v_battery_notify_title
-                                               | replace('{trigger_name}', batt_name)
-                                               | replace('{battery_level}', v_batt_level | string) }}
-                                          message: >-
-                                            {{ v_battery_notify_message
-                                               | replace('{trigger_name}', batt_name)
-                                               | replace('{battery_level}', v_batt_level | string) }}
-                                          data:
-                                            push:
-                                              interruption-level: "{{ v_battery_interruption_level }}"
+      # ╔══════════════════════════════════════════════════════════════════════╗
+      # ║  PFAD B: Tür geöffnet – warten, alarmieren, ggf. abschalten          ║
+      # ╚══════════════════════════════════════════════════════════════════════╝
+      - conditions:
+          - condition: template
+            value_template: "{{ v_event == 'door_opened' }}"
+        sequence:
 
-                            # Batterie-TTS
-                            - if:
-                                - condition: template
-                                  value_template: "{{ v_battery_notify_tts == true and v_tts_enabled == true }}"
-                                - condition: or
-                                  conditions:
-                                    - condition: template
-                                      value_template: "{{ v_tts_sleep_disabled }}"
-                                    - condition: not
-                                      conditions:
-                                        - condition: time
-                                          after: !input tts_sleep_start
-                                          before: !input tts_sleep_end
-                              then:
-                                - action: "{{ v_tts_service }}"
-                                  data:
-                                    entity_id: "{{ v_media_players }}"
-                                    message: >-
-                                      {{ v_battery_tts_message
-                                         | replace('{trigger_name}', batt_name)
-                                         | replace('{battery_level}', v_batt_level | string) }}
-                                    language: >-
-                                      {{ v_tts_language if v_tts_language != '' else omit }}
-                                    cache: false
+          # ── 1. Deaktivierungs-Schalter & Bypass prüfen ──────────────────
+          - if:
+              - condition: template
+                value_template: >-
+                  {{ (v_disable_switch != '' and states(v_disable_switch) == 'on')
+                     or (v_bypass_entities | select('is_state', 'on') | list | count > 0) }}
+            then:
+              - stop: "🛡️ Schalter/Bypass aktiv – kein Alarm"
 
-                            # Pause zwischen mehreren Batterie-Entities (falls TTS aktiv)
-                            - if:
-                                - condition: template
-                                  value_template: "{{ v_battery_notify_tts == true and v_tts_enabled == true }}"
-                                - condition: or
-                                  conditions:
-                                    - condition: template
-                                      value_template: "{{ v_tts_sleep_disabled }}"
-                                    - condition: not
-                                      conditions:
-                                        - condition: time
-                                          after: !input tts_sleep_start
-                                          before: !input tts_sleep_end
-                              then:
-                                - delay:
-                                    seconds: 4
+          - variables:
+              v_rounds: 0
+              v_alarm_started: 0
+              v_alarmed: false
+              v_switched_off: false
 
-              # ── 4h. Wiederholungsschleife ─────────────────────────────────
-              - if:
-                  - condition: template
-                    value_template: "{{ v_repeat_enabled == true }}"
-                then:
-                  - repeat:
-                      while:
+          # ── 2. Schleife, solange die Tür nicht zu ist ───────────────────
+          # Schlägt eine condition fehl, endet nur die aktuelle Runde; die
+          # Schleife prüft dann neu. unavailable hält den Lauf am Leben,
+          # löst aber nichts aus.
+          - repeat:
+              while:
+                - condition: template
+                  value_template: "{{ not is_state(v_door, 'off') }}"
+              sequence:
+                # 2a. Warten, bis im Raum geheizt wird (oder die Tür zu ist).
+                #     Gleicher Heiz-Ausdruck wie in 2c.
+                - wait_template: >-
+                    {%- set ns = namespace(h=(v_heating_mode == 'legacy')) -%}
+                    {%- for t in v_room_thermostats -%}
+                      {%- set a = state_attr(t, 'hvac_action') -%}
+                      {%- if a == 'heating'
+                            or (a is none
+                                and states(t) not in ['off', 'unavailable', 'unknown']
+                                and state_attr(t, 'temperature') | float(0)
+                                    > state_attr(t, 'current_temperature') | float(100)) -%}
+                        {%- set ns.h = true -%}
+                      {%- endif -%}
+                    {%- endfor -%}
+                    {{ (ns.h and is_state(v_door, 'on')) or is_state(v_door, 'off') }}
+
+                - condition: template
+                  value_template: "{{ is_state(v_door, 'on') }}"
+
+                # 2b. Wartezeit (erste Runde) bzw. Intervall – Schließen bricht sofort ab
+                - wait_template: "{{ not is_state(v_door, 'on') }}"
+                  timeout: "{{ (v_initial_delay if v_rounds == 0 else v_repeat_interval) | int(60) }}"
+                  continue_on_timeout: true
+
+                - condition: template
+                  value_template: "{{ is_state(v_door, 'on') }}"
+
+                # 2c. Wird noch geheizt? Sonst zurück zu 2a.
+                - condition: template
+                  value_template: >-
+                    {%- set ns = namespace(h=(v_heating_mode == 'legacy')) -%}
+                    {%- for t in v_room_thermostats -%}
+                      {%- set a = state_attr(t, 'hvac_action') -%}
+                      {%- if a == 'heating'
+                            or (a is none
+                                and states(t) not in ['off', 'unavailable', 'unknown']
+                                and state_attr(t, 'temperature') | float(0)
+                                    > state_attr(t, 'current_temperature') | float(100)) -%}
+                        {%- set ns.h = true -%}
+                      {%- endif -%}
+                    {%- endfor -%}
+                    {{ ns.h }}
+
+                # 2d. Schalter & Bypass erneut prüfen
+                - if:
+                    - condition: template
+                      value_template: >-
+                        {{ (v_disable_switch != '' and states(v_disable_switch) == 'on')
+                           or (v_bypass_entities | select('is_state', 'on') | list | count > 0) }}
+                  then:
+                    - stop: "🛡️ Schalter/Bypass während des Alarms aktiv"
+
+                # ── 3. Alarmrunde ───────────────────────────────────────
+                - variables:
+                    v_rounds: "{{ v_rounds + 1 }}"
+                    v_alarmed: true
+                    v_alarm_started: "{{ v_alarm_started if v_alarm_started > 0 else now().timestamp() }}"
+                    v_open_min: >-
+                      {{ ((now().timestamp() - as_timestamp(states[v_door].last_changed)) / 60) | int }}
+                    v_speak: "{{ v_rounds == 1 or v_repeat_enabled == true }}"
+                    v_msg: >-
+                      {{ (v_msg_first if v_rounds == 1 else v_msg_repeat)
+                         | replace('{trigger_name}', v_trig_name)
+                         | replace('{room_name}', v_room_name)
+                         | replace('{open_minutes}', v_open_min | string) }}
+
+                # 3a. Chime + TTS
+                - if:
+                    - condition: template
+                      value_template: "{{ v_tts_enabled == true and v_speak }}"
+                    - condition: or
+                      conditions:
                         - condition: template
-                          value_template: "{{ states(v_triggered_door) == 'on' }}"
-                      sequence:
+                          value_template: "{{ v_tts_sleep_disabled }}"
+                        - condition: not
+                          conditions:
+                            - condition: time
+                              after: !input tts_sleep_start
+                              before: !input tts_sleep_end
+                  then:
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_rounds == 1 and v_chime_url != '' }}"
+                      then:
+                        - action: media_player.play_media
+                          target:
+                            entity_id: "{{ v_media_players }}"
+                          data:
+                            media_content_id: "{{ v_chime_url }}"
+                            media_content_type: "{{ v_chime_type }}"
+                          continue_on_error: true
                         - delay:
-                            seconds: "{{ v_repeat_interval | int(60) }}"
+                            seconds: "{{ v_chime_wait | int(2) }}"
+
+                    - action: "{{ v_tts_action }}"
+                      data: "{{ dict(v_tts_base, message=v_msg) }}"
+                      continue_on_error: true
+
+                # 3b. Push
+                - if:
+                    - condition: template
+                      value_template: >-
+                        {{ v_speak and v_notify_enabled == true and v_notify_list | count > 0 }}
+                    - condition: or
+                      conditions:
+                        - condition: template
+                          value_template: "{{ v_push_sleep_disabled }}"
+                        - condition: not
+                          conditions:
+                            - condition: time
+                              after: !input push_sleep_start
+                              before: !input push_sleep_end
+                  then:
+                    - repeat:
+                        for_each: "{{ v_notify_list }}"
+                        sequence:
+                          - action: "{{ repeat.item }}"
+                            data:
+                              title: >-
+                                {{ v_notify_title
+                                   | replace('{trigger_name}', v_trig_name)
+                                   | replace('{room_name}', v_room_name)
+                                   | replace('{open_minutes}', v_open_min | string) }}
+                              message: >-
+                                {{ v_notify_message
+                                   | replace('{trigger_name}', v_trig_name)
+                                   | replace('{room_name}', v_room_name)
+                                   | replace('{open_minutes}', v_open_min | string) }}
+                              data:
+                                push:
+                                  interruption-level: "{{ v_notify_level }}"
+                            continue_on_error: true
+
+                # 3c. Nur in der ersten Runde: Custom Action + Batterie-Check
+                - if:
+                    - condition: template
+                      value_template: "{{ v_rounds == 1 }}"
+                  then:
+                    - choose: []
+                      default: !input action_on_open
+
+                    - if:
+                        - condition: template
+                          value_template: >-
+                            {{ v_battery_warn_enabled == true and v_battery_sensors | list | count > 0 }}
+                      then:
+                        - delay:
+                            seconds: 4
+
+                        - repeat:
+                            for_each: "{{ v_battery_sensors if v_battery_sensors is list else [v_battery_sensors] }}"
+                            sequence:
+                              - variables:
+                                  batt_entity: "{{ repeat.item }}"
+                                  batt_name: "{{ state_attr(repeat.item, 'friendly_name') | default(repeat.item) }}"
+                                  v_batt_triggered: >-
+                                    {% if states(batt_entity) not in ['unavailable', 'unknown', ''] %}
+                                      {% if batt_entity.startswith('binary_sensor.') %}
+                                        {{ states(batt_entity) == 'on' }}
+                                      {% else %}
+                                        {{ states(batt_entity) | int(100) < v_battery_threshold | int(20) }}
+                                      {% endif %}
+                                    {% else %}
+                                      {{ false }}
+                                    {% endif %}
+                                  v_batt_level: >-
+                                    {% if states(batt_entity) not in ['unavailable', 'unknown', ''] %}
+                                      {% if batt_entity.startswith('binary_sensor.') %}
+                                        leer (LOWBAT)
+                                      {% else %}
+                                        {{ states(batt_entity) | int(0) }}%
+                                      {% endif %}
+                                    {% else %}
+                                      unbekannt
+                                    {% endif %}
+
+                              - if:
+                                  - condition: template
+                                    value_template: "{{ v_batt_triggered == true }}"
+                                then:
+
+                                  # Batterie-Push
+                                  - if:
+                                      - condition: template
+                                        value_template: >-
+                                          {{ v_battery_notify_push == true and v_notify_enabled == true
+                                             and v_notify_list | count > 0 }}
+                                      - condition: or
+                                        conditions:
+                                          - condition: template
+                                            value_template: "{{ v_push_sleep_disabled }}"
+                                          - condition: not
+                                            conditions:
+                                              - condition: time
+                                                after: !input push_sleep_start
+                                                before: !input push_sleep_end
+                                    then:
+                                      - repeat:
+                                          for_each: "{{ v_notify_list }}"
+                                          sequence:
+                                            - action: "{{ repeat.item }}"
+                                              data:
+                                                title: >-
+                                                  {{ v_battery_notify_title
+                                                     | replace('{trigger_name}', batt_name)
+                                                     | replace('{battery_level}', v_batt_level | string) }}
+                                                message: >-
+                                                  {{ v_battery_notify_message
+                                                     | replace('{trigger_name}', batt_name)
+                                                     | replace('{battery_level}', v_batt_level | string) }}
+                                                data:
+                                                  push:
+                                                    interruption-level: "{{ v_battery_interruption_level }}"
+                                              continue_on_error: true
+
+                                  # Batterie-TTS (mit Pause für die nächste Entity)
+                                  - if:
+                                      - condition: template
+                                        value_template: "{{ v_battery_notify_tts == true and v_tts_enabled == true }}"
+                                      - condition: or
+                                        conditions:
+                                          - condition: template
+                                            value_template: "{{ v_tts_sleep_disabled }}"
+                                          - condition: not
+                                            conditions:
+                                              - condition: time
+                                                after: !input tts_sleep_start
+                                                before: !input tts_sleep_end
+                                    then:
+                                      - action: "{{ v_tts_action }}"
+                                        data: >-
+                                          {{ dict(v_tts_base, message=(v_battery_tts_message
+                                                                       | replace('{trigger_name}', batt_name)
+                                                                       | replace('{battery_level}', v_batt_level | string))) }}
+                                        continue_on_error: true
+                                      - delay:
+                                          seconds: 4
+
+                # ── 4. Heizung ausschalten? ─────────────────────────────
+                # X Runden ODER Y Minuten seit der ersten Ansage – was zuerst kommt.
+                - if:
+                    - condition: template
+                      value_template: >-
+                        {{ v_heat_off_enabled == true and v_heating_mode == 'heating'
+                           and ((v_heat_off_count | int(0) > 0
+                                 and v_rounds >= v_heat_off_count | int(0))
+                                or (v_heat_off_minutes | int(0) > 0
+                                    and now().timestamp() - v_alarm_started | float(0)
+                                        >= v_heat_off_minutes | int(0) * 60)) }}
+                  then:
+                    - variables:
+                        v_turned_off: []
+
+                    - repeat:
+                        for_each: "{{ v_room_thermostats }}"
+                        sequence:
+                          - variables:
+                              v_th: "{{ repeat.item }}"
+                              v_th_key: "{{ repeat.item.split('.', 1)[1] }}"
+
+                          # Was schon aus ist, bleibt unberührt – so wird ein
+                          # Snapshot nie mit "off" überschrieben.
+                          - if:
+                              - condition: template
+                                value_template: "{{ states(v_th) not in ['off', 'unavailable', 'unknown'] }}"
+                            then:
+                              - action: scene.create
+                                data:
+                                  scene_id: "tuer_alarm_pro_{{ v_th_key }}"
+                                  snapshot_entities: "{{ [v_th] }}"
+                                continue_on_error: true
+
+                              # Merker-Helfer: "key=modus:soll;key2=..." (kein JSON,
+                              # weil HA JSON beim Rendern in ein Dict umwandeln würde)
+                              - if:
+                                  - condition: template
+                                    value_template: "{{ v_state_helper not in ['', none] }}"
+                                then:
+                                  - variables:
+                                      v_helper_new: >-
+                                        {{ (states(v_state_helper).split(';')
+                                            | select('search', '=')
+                                            | reject('search', '^' ~ v_th_key ~ '=')
+                                            | list
+                                            + [v_th_key ~ '=' ~ states(v_th) ~ ':'
+                                               ~ (state_attr(v_th, 'temperature')
+                                                  if state_attr(v_th, 'temperature') is not none else '')])
+                                           | join(';') }}
+                                  - if:
+                                      - condition: template
+                                        value_template: >-
+                                          {{ v_helper_new | length <= state_attr(v_state_helper, 'max') | int(255) }}
+                                    then:
+                                      - action: input_text.set_value
+                                        target:
+                                          entity_id: "{{ v_state_helper }}"
+                                        data:
+                                          value: "{{ v_helper_new }}"
+                                        continue_on_error: true
+                                    else:
+                                      - action: system_log.write
+                                        data:
+                                          level: warning
+                                          logger: blueprints.tuer_alarm_pro
+                                          message: >-
+                                            Merker-Helfer {{ v_state_helper }} ist zu kurz für
+                                            {{ v_th }} – Wiederherstellung nur über die Szene
+                                            (nicht neustartsicher).
+
+                              - action: climate.set_hvac_mode
+                                target:
+                                  entity_id: "{{ v_th }}"
+                                data:
+                                  hvac_mode: "off"
+                                continue_on_error: true
+
+                              - variables:
+                                  v_turned_off: "{{ v_turned_off + [v_th] }}"
+
+                    # Zähler zurücksetzen: schaltet jemand die Heizung bei
+                    # offener Tür wieder ein, beginnt ein frischer Zyklus.
+                    - variables:
+                        v_rounds: 0
+                        v_alarm_started: 0
+                        v_switched_off: "{{ v_switched_off or v_turned_off | count > 0 }}"
+
+                    # Eine Ansage, dann Ruhe (es wird ja nicht mehr geheizt)
+                    - if:
+                        - condition: template
+                          value_template: "{{ v_turned_off | count > 0 }}"
+                      then:
+                        - variables:
+                            v_msg: >-
+                              {{ v_msg_heating_off
+                                 | replace('{trigger_name}', v_trig_name)
+                                 | replace('{room_name}', v_room_name) }}
 
                         - if:
                             - condition: template
-                              value_template: "{{ states(v_triggered_door) == 'on' }}"
+                              value_template: "{{ v_tts_enabled == true }}"
+                            - condition: or
+                              conditions:
+                                - condition: template
+                                  value_template: "{{ v_tts_sleep_disabled }}"
+                                - condition: not
+                                  conditions:
+                                    - condition: time
+                                      after: !input tts_sleep_start
+                                      before: !input tts_sleep_end
                           then:
-                            # Schalter/Bypass in Schleife
-                            - if:
-                                - condition: template
-                                  value_template: >-
-                                    {{ (v_disable_switch != '' and states(v_disable_switch) == 'on')
-                                       or (v_bypass_entities | select('is_state', 'on') | list | count > 0) }}
-                              then:
-                                - stop: "🛡️ Schalter/Bypass in Wiederholungsschleife"
+                            - action: "{{ v_tts_action }}"
+                              data: "{{ dict(v_tts_base, message=v_msg) }}"
+                              continue_on_error: true
 
-                            - variables:
-                                open_min: >-
-                                  {{ ((now().timestamp() - as_timestamp(states[v_triggered_door].last_changed)) / 60) | int }}
-
-                            # Wiederholungs-TTS
-                            - if:
+                        - if:
+                            - condition: template
+                              value_template: >-
+                                {{ v_notify_heating == true and v_notify_enabled == true
+                                   and v_notify_list | count > 0 }}
+                            - condition: or
+                              conditions:
                                 - condition: template
-                                  value_template: "{{ v_tts_enabled == true }}"
-                                - condition: or
+                                  value_template: "{{ v_push_sleep_disabled }}"
+                                - condition: not
                                   conditions:
-                                    - condition: template
-                                      value_template: "{{ v_tts_sleep_disabled }}"
-                                    - condition: not
-                                      conditions:
-                                        - condition: time
-                                          after: !input tts_sleep_start
-                                          before: !input tts_sleep_end
-                              then:
-                                - action: "{{ v_tts_service }}"
-                                  data:
-                                    entity_id: "{{ v_media_players }}"
-                                    message: >-
-                                      {{ v_msg_repeat
-                                         | replace('{trigger_name}', v_trig_name)
-                                         | replace('{open_minutes}', open_min | string) }}
-                                    language: >-
-                                      {{ v_tts_language if v_tts_language != '' else omit }}
-                                    cache: false
+                                    - condition: time
+                                      after: !input push_sleep_start
+                                      before: !input push_sleep_end
+                          then:
+                            - repeat:
+                                for_each: "{{ v_notify_list }}"
+                                sequence:
+                                  - action: "{{ repeat.item }}"
+                                    data:
+                                      title: "🔥 Heizung aus: {{ v_room_name }}"
+                                      message: "{{ v_msg }}"
+                                      data:
+                                        push:
+                                          interruption-level: "{{ v_notify_level }}"
+                                    continue_on_error: true
 
-                            # Wiederholungs-Push
-                            - if:
-                                - condition: template
-                                  value_template: >-
-                                    {{ v_notify_enabled == true and v_notify_services != '' }}
-                                - condition: or
-                                  conditions:
-                                    - condition: template
-                                      value_template: "{{ v_push_sleep_disabled }}"
-                                    - condition: not
-                                      conditions:
-                                        - condition: time
-                                          after: !input push_sleep_start
-                                          before: !input push_sleep_end
-                              then:
-                                - repeat:
-                                    for_each: "{{ v_notify_services.split(',') | map('trim') | list }}"
-                                    sequence:
-                                      - action: "{{ repeat.item }}"
-                                        data:
-                                          title: >-
-                                            {{ v_notify_title
-                                               | replace('{trigger_name}', v_trig_name)
-                                               | replace('{open_minutes}', open_min | string) }}
-                                          message: >-
-                                            {{ v_notify_message
-                                               | replace('{trigger_name}', v_trig_name)
-                                               | replace('{open_minutes}', open_min | string) }}
-                                          data:
-                                            push:
-                                              interruption-level: "{{ v_notify_level }}"
+          # ── 5. Tür zu: Danke-Ansage (nur nach Alarm) ────────────────────
+          # Snapshot-Status VOR dem Entprellen merken: der Schließ-Lauf löscht die
+          # Szene nach dem Wiederherstellen und spricht dann selbst.
+          - variables:
+              v_room_has_snapshot: >-
+                {{ expand(v_room_thermostats
+                          | map('regex_replace', '^climate\\.', 'scene.tuer_alarm_pro_')
+                          | list) | count > 0 }}
 
+          - delay:
+              seconds: "{{ v_debounce | int(1) }}"
+
+          - if:
+              - condition: template
+                value_template: "{{ not is_state(v_door, 'off') }}"
+            then:
+              - stop: "Tür wieder offen – ein neuer Lauf übernimmt"
+
+          - if:
+              - condition: template
+                value_template: >-
+                  {{ v_tts_enabled == true and v_thank_you_mode == 'nur_nach_alarm'
+                     and v_alarmed and not v_switched_off and not v_room_has_snapshot }}
+              - condition: or
+                conditions:
+                  - condition: template
+                    value_template: "{{ v_tts_sleep_disabled }}"
+                  - condition: not
+                    conditions:
+                      - condition: time
+                        after: !input tts_sleep_start
+                        before: !input tts_sleep_end
+            then:
+              - action: "{{ v_tts_action }}"
+                data: >-
+                  {{ dict(v_tts_base, message=(v_msg_closed
+                                               | replace('{trigger_name}', v_trig_name)
+                                               | replace('{room_name}', v_room_name))) }}
+                continue_on_error: true
+
+          - stop: "✅ Tür geschlossen – Überwachung beendet"
